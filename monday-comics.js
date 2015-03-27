@@ -62,6 +62,7 @@ prompts.push( { weight: 1, val: function () {
         var foil = randomlyPickCharacter();
         var havingQuality = randomlyPickQuality( main );
     } while ( main.name === foil.name );
+    
     return "The fact of " + main.name + " " + havingQuality + " " +
         "takes " + foil.name + " by surprise.";
 } } );
@@ -78,20 +79,18 @@ prompts.push( { weight: 3, val: function () {
     } while ( main.name === foil.name
         || havingQuality === havingAnotherQuality );
     
-    return foil.name + " tries to take advantage of the fact of " +
-        main.name + " " + havingQuality + ", " +
-        randomlyPickElement( [ function () {
-            return "and the attempt succeeds.";
-        }, function () {
-            return "but the attempt fails.";
-        }, function () {
-            return "but the attempt fails because of " +
-                main.name + " " + havingAnotherQuality + ".";
-        } ] )();
+    return foil.name + " tries to benefit from " + main.name + " " +
+        havingQuality + ", " +
+        randomlyPickElement( [
+            "and the attempt succeeds.",
+            "but the attempt fails.",
+            "but the attempt fails because of " + main.name + " " +
+                havingAnotherQuality + "."
+        ] );
 } } );
 
 // B or A offers advice to or solicits advice from the other, in
-//regard to that detail. (4 configurations)
+// regard to that detail. (4 configurations)
 prompts.push( { weight: 4, val: function () {
     do {
         var main = randomlyPickCharacter();
@@ -99,21 +98,16 @@ prompts.push( { weight: 4, val: function () {
         var havingQuality = randomlyPickQuality( main );
     } while ( main.name === foil.name );
     
-    return randomlyPickElement( [ function () {
-        return main.name + ", " + havingQuality + ", " +
-            randomlyPickElement( [
-                "offers advice to ",
-                "solicits advice from "
-            ] ) +
-            foil.name + ".";
-    }, function () {
-        return foil.name + " " +
-            randomlyPickElement( [
-                "offers advice to " + main.name + " to deal with ",
-                "solicits advice from " + main.name + " on "
-            ] ) +
-            havingQuality + ".";
-    } ] )();
+    return randomlyPickElement( [
+        main.name + ", enthused with " + havingQuality + ", offers " +
+            "advice to " + foil.name + ".",
+        main.name + ", frustrated with " + havingQuality + ", " +
+            "seeks advice from " + foil.name + ".",
+        foil.name + " offers advice to " + main.name + " to deal " +
+            "with " + havingQuality + ".",
+        foil.name + " seeks advice from " + main.name + " on " +
+            havingQuality + "."
+    ] );
 } } );
 
 // They participate in a situation where the detail is surprisingly
@@ -125,13 +119,9 @@ prompts.push( { weight: 2, val: function () {
         var havingQuality = randomlyPickQuality( main );
     } while ( main.name === foil.name );
     
-    return main.name + " and " + foil.name + " have an experience " +
-        "where " + main.name + " " + havingQuality + " is " +
-        "surprisingly " +
-        randomlyPickElement( [
-            "valuable.",
-            "disadvantageous."
-        ] );
+    return foil.name + " discovers a surprising " +
+        randomlyPickElement( [ "benefit ", "drawback " ] ) + "in " +
+        main.name + " " + havingQuality + ".";
 } } );
 
 characters.push( { name: "Magical Radia", qualities: [
@@ -139,7 +129,7 @@ characters.push( { name: "Magical Radia", qualities: [
     "liking Fromara",
     "pretending to be straight",
     "having elephant-shaped hair",
-    "having access to magic",
+    "doing magic",
     "believing in individual rights"
 ] } );
 
@@ -154,11 +144,10 @@ characters.push( { name: "Fromara", qualities: [
 
 characters.push( { name: "Robbie", qualities: [
     "being a master thief",
+    "liking Magical Radia",
     "having no sense of humor",
     "wearing belts instead of a shirt",
     "having inner focus",
+    "doing magic",
     "believing in centralization"
 ] } );
-
-for ( var i = 0; i < 3; i++ )
-    console.log( randomlyPickMondayComicPrompt() );
