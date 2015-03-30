@@ -14,7 +14,7 @@ var characters = [];
 
 characters.push( { name: "Dr. Wily", qualities: [
     "building robots",
-    "stealing weapons",
+    "reprogramming stolen technology",
     "pretending to be good",
     "taking over the world",
     "designing hostile architecture",
