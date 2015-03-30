@@ -40,26 +40,25 @@ function randomlyPickWeighted( arr ) {
     } ).val;
 }
 
-var characters = [];
-var prompts = [];
-
-function randomlyPickCharacter() {
-    return randomlyPickElement( characters );
+function randomlyPickCharacter( continuityData ) {
+    return randomlyPickElement( continuityData.characters );
 }
 
 function randomlyPickQuality( character ) {
     return randomlyPickElement( character.qualities );
 }
 
-function randomlyPickMondayComicPrompt() {
-    return randomlyPickWeighted( prompts )();
+var prompts = [];
+
+function randomlyPickPrompt( continuityData ) {
+    return randomlyPickWeighted( prompts )( continuityData );
 }
 
 // The detail takes B by surprise. (1 configuration)
-prompts.push( { weight: 1, val: function () {
+prompts.push( { weight: 1, val: function ( continuityData ) {
     do {
-        var main = randomlyPickCharacter();
-        var foil = randomlyPickCharacter();
+        var main = randomlyPickCharacter( continuityData );
+        var foil = randomlyPickCharacter( continuityData );
         var havingQuality = randomlyPickQuality( main );
     } while ( main.name === foil.name );
     
@@ -70,10 +69,10 @@ prompts.push( { weight: 1, val: function () {
 // B tries to use the detail to their advantage and either succeeds or
 // fails. Maybe they fail because of another detail.
 // (3 configurations)
-prompts.push( { weight: 3, val: function () {
+prompts.push( { weight: 3, val: function ( continuityData ) {
     do {
-        var main = randomlyPickCharacter();
-        var foil = randomlyPickCharacter();
+        var main = randomlyPickCharacter( continuityData );
+        var foil = randomlyPickCharacter( continuityData );
         var havingQuality = randomlyPickQuality( main );
         var havingAnotherQuality = randomlyPickQuality( main );
     } while ( main.name === foil.name
@@ -91,10 +90,10 @@ prompts.push( { weight: 3, val: function () {
 
 // B or A offers advice to or solicits advice from the other, in
 // regard to that detail. (4 configurations)
-prompts.push( { weight: 4, val: function () {
+prompts.push( { weight: 4, val: function ( continuityData ) {
     do {
-        var main = randomlyPickCharacter();
-        var foil = randomlyPickCharacter();
+        var main = randomlyPickCharacter( continuityData );
+        var foil = randomlyPickCharacter( continuityData );
         var havingQuality = randomlyPickQuality( main );
     } while ( main.name === foil.name );
     
@@ -112,10 +111,10 @@ prompts.push( { weight: 4, val: function () {
 
 // They participate in a situation where the detail is surprisingly
 // valuable or surprisingly challenging. (2 configurations)
-prompts.push( { weight: 2, val: function () {
+prompts.push( { weight: 2, val: function ( continuityData ) {
     do {
-        var main = randomlyPickCharacter();
-        var foil = randomlyPickCharacter();
+        var main = randomlyPickCharacter( continuityData );
+        var foil = randomlyPickCharacter( continuityData );
         var havingQuality = randomlyPickQuality( main );
     } while ( main.name === foil.name );
     
@@ -123,31 +122,3 @@ prompts.push( { weight: 2, val: function () {
         randomlyPickElement( [ "benefit ", "drawback " ] ) + "in " +
         main.name + " " + havingQuality + ".";
 } } );
-
-characters.push( { name: "Magical Radia", qualities: [
-    "breaking the fourth wall",
-    "liking Fromara",
-    "pretending to be straight",
-    "having elephant-shaped hair",
-    "doing magic",
-    "believing in individual rights"
-] } );
-
-characters.push( { name: "Fromara", qualities: [
-    "being optimistic",
-    "being a troll",
-    "letting romance get away from her",
-    "having hearts, spades, and S's on her clothes",
-    "having lots of money",
-    "believing in capitalism"
-] } );
-
-characters.push( { name: "Robbie", qualities: [
-    "being a master thief",
-    "liking Magical Radia",
-    "having no sense of humor",
-    "wearing belts instead of a shirt",
-    "having inner focus",
-    "doing magic",
-    "believing in centralization"
-] } );

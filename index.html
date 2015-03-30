@@ -8,27 +8,52 @@ Copyright 2015 Ross Angle. Released under the MIT License.
 -->
 <title>Monday Comics plot prompt</title>
 <style type="text/css">
-textarea { display: block; }
+button {
+    margin: 10px;
+    display: block;
+}
+#result > p {
+    margin: 10px;
+    width: 400px;
+}
 </style>
 </head>
 <body>
 
-<textarea id="result" disabled cols="80" rows="24"></textarea>
+<button id="generate-magical-radia"
+    >Generate writing prompts for Magical Radia (an original story)</button>
+<button id="generate-mega-man-classic"
+    >Generate writing prompts for the Mega Man classic series</button>
+<div id="result" disabled cols="80" rows="24"></div>
 
 <script type="text/javascript" src="lib/lathe.js"></script>
 <script type="text/javascript">"use strict";
 var _ = rocketnia.lathe;
 </script>
 <script type="text/javascript" src="monday-comics.js"></script>
+<script type="text/javascript" src="data-for-magical-radia.js">
+    </script>
+<script type="text/javascript" src="data-for-mega-man-classic.js">
+    </script>
 <script type="text/javascript">"use strict";
 
 window.onload = function () {
-    document.getElementById( "result" ).value =
-        randomlyPickMondayComicPrompt() + "\n" +
-        "\n" +
-        randomlyPickMondayComicPrompt() + "\n" +
-        "\n" +
-        randomlyPickMondayComicPrompt();
+    function generateUsing( continuityData ) {
+        _.dom( _.el( "result" ), _.numMap( 3, function () {
+            return _.dom( "p", randomlyPickPrompt( continuityData ) );
+        } ) );
+    }
+    _.appendDom( _.el( "generate-magical-radia" ), { click:
+        function () {
+        
+        generateUsing( dataForMagicalRadia );
+    } } );
+    _.appendDom( _.el( "generate-mega-man-classic" ), { click:
+        function () {
+        
+        generateUsing( dataForMegaManClassic );
+    } } );
+    generateUsing( dataForMagicalRadia );
 };
 
 </script>
