@@ -122,3 +122,23 @@ prompts.push( { weight: 2, val: function ( continuityData ) {
         randomlyPickElement( [ "benefit ", "drawback " ] ) + "in " +
         main.name + " " + havingQuality + ".";
 } } );
+
+// TODO: Add these prompts:
+//
+// To get back at B, A tries having a detail.
+// To get back at A, B tries imitating A having a detail.
+// B messes up, and A is in danger due to having a detail.
+// B gossips with C about A having a detail.
+// A disguises as B, but having a detail is a dead giveaway.
+// B disguises as A, but C knows about A having a detail.
+//
+// Everyone suddenly copycats A in having a detail, but B doesn't
+// follow along.
+//
+// A stops having a detail, and B gets worried.
+//
+// B comes up with a plan to amplify the innate power of A having a
+// detail.
+//
+// B requires someone good at having a detail, and C volunteers A.
+// B requires someone good at having a detail, and A vouches for C.
