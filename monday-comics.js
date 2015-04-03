@@ -23,6 +23,8 @@ function randomlyPickElement( arr ) {
     return arr[ randomlyPickNat( arr.length ) ];
 }
 
+// TODO: See if we even need this now that all our weights are 1 in
+// practice.
 function randomlyPickWeighted( arr ) {
     var n = arr.length;
     if ( n === 0 )
@@ -50,95 +52,147 @@ function randomlyPickQuality( character ) {
 
 var prompts = [];
 
+// TODO: See what we should do when there are fewer than three
+// characters or a character has fewer than two qualities. Right now
+// the prompts may loop infinitely as they try to pick distinct
+// entries.
 function randomlyPickPrompt( continuityData ) {
     return randomlyPickWeighted( prompts )( continuityData );
 }
 
-// The detail takes B by surprise. (1 configuration)
-prompts.push( { weight: 1, val: function ( continuityData ) {
-    do {
-        var main = randomlyPickCharacter( continuityData );
-        var foil = randomlyPickCharacter( continuityData );
-        var havingQuality = randomlyPickQuality( main );
-    } while ( main.name === foil.name );
-    
-    return "The fact of " + main.name + " " + havingQuality + " " +
-        "takes " + foil.name + " by surprise.";
-} } );
+function hasStringDuplicates( arr ) {
+    var seen = {};
+    return _.arrAny( arr, function ( str ) {
+        var k = "|" + str;
+        if ( _.hasOwn( seen, k ) )
+            return true;
+        seen[ k ] = true;
+        return false;
+    } );
+}
 
-// B tries to use the detail to their advantage and either succeeds or
-// fails. Maybe they fail because of another detail.
-// (3 configurations)
-prompts.push( { weight: 3, val: function ( continuityData ) {
-    do {
-        var main = randomlyPickCharacter( continuityData );
-        var foil = randomlyPickCharacter( continuityData );
-        var havingQuality = randomlyPickQuality( main );
-        var havingAnotherQuality = randomlyPickQuality( main );
-    } while ( main.name === foil.name
-        || havingQuality === havingAnotherQuality );
+// TODO: Instead of picking a character at random and then picking one
+// of their qualities, pick among all characters' qualities and then
+// use that to pick a character. That way the least interesting
+// characters are picked less often.
+function addDslPrompt( prompt ) {
+    function replaceWith( insertions ) {
+        return prompt.replace( /\[([ a-z]*)\]/g,
+            function ( keywordAndBrackets, keyword ) {
+            
+            if ( !_.hasOwn( insertions, keyword ) )
+                throw new Error();
+            return insertions[ keyword ];
+        } );
+    }
     
-    return foil.name + " tries to benefit from " + main.name + " " +
-        havingQuality + ", " +
-        randomlyPickElement( [
-            "and the attempt succeeds.",
-            "but the attempt fails.",
-            "but the attempt fails because of " + main.name + " " +
-                havingAnotherQuality + "."
-        ] );
-} } );
-
-// B or A offers advice to or solicits advice from the other, in
-// regard to that detail. (4 configurations)
-prompts.push( { weight: 4, val: function ( continuityData ) {
-    do {
-        var main = randomlyPickCharacter( continuityData );
-        var foil = randomlyPickCharacter( continuityData );
-        var havingQuality = randomlyPickQuality( main );
-    } while ( main.name === foil.name );
+    // NOTE: Right now all of the following behave very similarly, but
+    // in general we might like different kinds of templates to have
+    // different kinds of behavior.
     
-    return randomlyPickElement( [
-        main.name + ", enthused with " + havingQuality + ", offers " +
-            "advice to " + foil.name + ".",
-        main.name + ", frustrated with " + havingQuality + ", " +
-            "seeks advice from " + foil.name + ".",
-        foil.name + " offers advice to " + main.name + " to deal " +
-            "with " + havingQuality + ".",
-        foil.name + " seeks advice from " + main.name + " on " +
-            havingQuality + "."
-    ] );
-} } );
+    if ( /\[a\]/.test( prompt )
+        && /\[having a detail\]/.test( prompt )
+        && !/\[having another detail\]/.test( prompt )
+        && /\[b\]/.test( prompt )
+        && /\[c\]/.test( prompt ) ) {
+        
+        prompts.push( { weight: 1, val: function ( continuityData ) {
+            do {
+                var charA = randomlyPickCharacter( continuityData );
+                var charB = randomlyPickCharacter( continuityData );
+                var charC = randomlyPickCharacter( continuityData );
+                var havingQuality = randomlyPickQuality( charA );
+            } while (
+                hasStringDuplicates(
+                    [ charA.name, charB.name, charC.name ] ) );
+            
+            return replaceWith( {
+                "a": charA.name,
+                "having a detail": havingQuality,
+                "b": charB.name,
+                "c": charC.name
+            } );
+        } } );
+        
+    } else if ( /\[a\]/.test( prompt )
+        && /\[having a detail\]/.test( prompt )
+        && !/\[having another detail\]/.test( prompt )
+        && /\[b\]/.test( prompt )
+        && !/\[c\]/.test( prompt ) ) {
+        
+        prompts.push( { weight: 1, val: function ( continuityData ) {
+            do {
+                var charA = randomlyPickCharacter( continuityData );
+                var charB = randomlyPickCharacter( continuityData );
+                var havingQuality = randomlyPickQuality( charA );
+            } while ( charA.name === charB.name );
+            
+            return replaceWith( {
+                "a": charA.name,
+                "having a detail": havingQuality,
+                "b": charB.name
+            } );
+        } } );
+        
+    } else if ( /\[a\]/.test( prompt )
+        && /\[having a detail\]/.test( prompt )
+        && /\[having another detail\]/.test( prompt )
+        && /\[b\]/.test( prompt )
+        && !/\[c\]/.test( prompt ) ) {
+        
+        prompts.push( { weight: 1, val: function ( continuityData ) {
+            do {
+                var charA = randomlyPickCharacter( continuityData );
+                var charB = randomlyPickCharacter( continuityData );
+                var havingQuality = randomlyPickQuality( charA );
+                var havingAnotherQuality =
+                    randomlyPickQuality( charA );
+            } while ( charA.name === charB.name
+                || havingQuality === havingAnotherQuality );
+            
+            return replaceWith( {
+                "a": charA.name,
+                "having a detail": havingQuality,
+                "having another detail": havingAnotherQuality,
+                "b": charB.name
+            } );
+        } } );
+    } else {
+        throw new Error();
+    }
+}
 
-// They participate in a situation where the detail is surprisingly
-// valuable or surprisingly challenging. (2 configurations)
-prompts.push( { weight: 2, val: function ( continuityData ) {
-    do {
-        var main = randomlyPickCharacter( continuityData );
-        var foil = randomlyPickCharacter( continuityData );
-        var havingQuality = randomlyPickQuality( main );
-    } while ( main.name === foil.name );
-    
-    return foil.name + " discovers a surprising " +
-        randomlyPickElement( [ "benefit ", "drawback " ] ) + "in " +
-        main.name + " " + havingQuality + ".";
-} } );
-
-// TODO: Add these prompts:
-//
-// To get back at B, A tries having a detail.
-// To get back at A, B tries imitating A having a detail.
-// B messes up, and A is in danger due to having a detail.
-// B gossips with C about A having a detail.
-// A disguises as B, but having a detail is a dead giveaway.
-// B disguises as A, but C knows about A having a detail.
-//
-// Everyone suddenly copycats A in having a detail, but B doesn't
-// follow along.
-//
-// A stops having a detail, and B gets worried.
-//
-// B comes up with a plan to amplify the innate power of A having a
-// detail.
-//
-// B requires someone good at having a detail, and C volunteers A.
-// B requires someone good at having a detail, and A vouches for C.
+_.arrEach( [
+    "The fact of [a] [having a detail] takes [b] by surprise.",
+    "[b] tries to benefit from [a] [having a detail], and the " +
+        "attempt succeeds.",
+    "[b] tries to benefit from [a] [having a detail], but the " +
+        "attempt fails.",
+    "[b] tries to benefit from [a] [having a detail], but the " +
+        "attempt fails because of [a] [having another detail].",
+    "[a], enthused with [having a detail], offers advice to [b].",
+    "[a], frustrated with [having a detail], seeks advice from [b].",
+    "[b] offers advice to [a] to deal with [having a detail].",
+    "[b] seeks advice from [a] on [having a detail].",
+    "[b] discovers a surprising benefit in [a] [having a detail].",
+    "[b] discovers a surprising drawback in [a] [having a detail].",
+    "To get back at [b], [a] tries [having a detail].",
+    "To get back at [a], [b] tries imitating [a] [having a detail].",
+    "[b] messes up, and [a] is in danger due to [having a detail].",
+    "[b] gossips with [c] about [a] [having a detail].",
+    "[a] goes in disguise as [b] but keeps accidentally " +
+        "[having a detail].",
+    "[b] goes in disguise as [a], but [c] won't believe it without " +
+        "\"[a]\" [having a detail].",
+    "Everyone suddenly copycats [a] in [having a detail], but [b] " +
+        "doesn't follow along.",
+    "[a] stops [having a detail], and [b] gets worried.",
+    "[b] comes up with a plan to amplify the innate power of [a] " +
+        "[having a detail].",
+    "[b] requires someone good at [having a detail], and [c] " +
+        "volunteers [a].",
+    "[b] requires someone good at [having a detail], and [a] " +
+        "vouches for [c]."
+], function ( prompt ) {
+    addDslPrompt( prompt );
+} );

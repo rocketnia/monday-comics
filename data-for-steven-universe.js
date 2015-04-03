@@ -22,7 +22,7 @@ characters.push( { name: "Steven", qualities: [
 
 characters.push( { name: "Garnet", qualities: [
     "being in tune with herself",
-    "recognizing possible outcomes",
+    "predicting possible outcomes",
     "getting hooked on video games",
     "settling disputes",
     "smashing things with giant gauntlets"
