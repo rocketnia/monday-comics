@@ -46,6 +46,23 @@ function randomlyPickCharacter( continuityData ) {
     return randomlyPickElement( continuityData.characters );
 }
 
+// Instead of picking a character at random and then picking one of
+// its qualities, this picks among all characters' qualities and then
+// use that to pick a character. That way the least interesting
+// characters are picked less often.
+function randomlyPickCharacterAndQuality( continuityData ) {
+    return randomlyPickElement(
+        _.arrMappend( continuityData.characters,
+            function ( character ) {
+            
+            return _.arrMap( character.qualities,
+                function ( quality ) {
+                
+                return { character: character, quality: quality };
+            } );
+        } ) );
+}
+
 function randomlyPickQuality( character ) {
     return randomlyPickElement( character.qualities );
 }
@@ -71,10 +88,6 @@ function hasStringDuplicates( arr ) {
     } );
 }
 
-// TODO: Instead of picking a character at random and then picking one
-// of their qualities, pick among all characters' qualities and then
-// use that to pick a character. That way the least interesting
-// characters are picked less often.
 function addDslPrompt( prompt ) {
     function replaceWith( insertions ) {
         return prompt.replace( /\[([ a-z]*)\]/g,
@@ -98,17 +111,17 @@ function addDslPrompt( prompt ) {
         
         prompts.push( { weight: 1, val: function ( continuityData ) {
             do {
-                var charA = randomlyPickCharacter( continuityData );
+                var a =
+                    randomlyPickCharacterAndQuality( continuityData );
                 var charB = randomlyPickCharacter( continuityData );
                 var charC = randomlyPickCharacter( continuityData );
-                var havingQuality = randomlyPickQuality( charA );
             } while (
                 hasStringDuplicates(
-                    [ charA.name, charB.name, charC.name ] ) );
+                    [ a.character.name, charB.name, charC.name ] ) );
             
             return replaceWith( {
-                "a": charA.name,
-                "having a detail": havingQuality,
+                "a": a.character.name,
+                "having a detail": a.quality,
                 "b": charB.name,
                 "c": charC.name
             } );
@@ -122,14 +135,14 @@ function addDslPrompt( prompt ) {
         
         prompts.push( { weight: 1, val: function ( continuityData ) {
             do {
-                var charA = randomlyPickCharacter( continuityData );
+                var a =
+                    randomlyPickCharacterAndQuality( continuityData );
                 var charB = randomlyPickCharacter( continuityData );
-                var havingQuality = randomlyPickQuality( charA );
-            } while ( charA.name === charB.name );
+            } while ( a.character.name === charB.name );
             
             return replaceWith( {
-                "a": charA.name,
-                "having a detail": havingQuality,
+                "a": a.character.name,
+                "having a detail": a.quality,
                 "b": charB.name
             } );
         } } );
@@ -142,17 +155,17 @@ function addDslPrompt( prompt ) {
         
         prompts.push( { weight: 1, val: function ( continuityData ) {
             do {
-                var charA = randomlyPickCharacter( continuityData );
+                var a =
+                    randomlyPickCharacterAndQuality( continuityData );
                 var charB = randomlyPickCharacter( continuityData );
-                var havingQuality = randomlyPickQuality( charA );
                 var havingAnotherQuality =
-                    randomlyPickQuality( charA );
-            } while ( charA.name === charB.name
-                || havingQuality === havingAnotherQuality );
+                    randomlyPickQuality( a.character );
+            } while ( a.character.name === charB.name
+                || a.quality === havingAnotherQuality );
             
             return replaceWith( {
-                "a": charA.name,
-                "having a detail": havingQuality,
+                "a": a.character.name,
+                "having a detail": a.quality,
                 "having another detail": havingAnotherQuality,
                 "b": charB.name
             } );
