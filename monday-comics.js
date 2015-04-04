@@ -10,21 +10,51 @@
 
 "use strict";
 
-function randomlyPickNat( max ) {
-    if ( max === 0 )
+// NOTE: Currently, all the generators we use are set up so that they
+// can select uniformly between every possible outcome if
+// completelyUniformDistribution here is set to true. However, to
+// implement this we actually have to keep track of how many possible
+// outcomes there are in order to do appropriate weighting. This seems
+// to be staying safely within the range of a JavaScript number, but
+// if it gets particularly large we might need to reconsider
+// supporting this at all.
+//
+// Right now we have it set to false because a fully uniform
+// distribution strongly favors prompts that have more blanks in
+// them, and that makes those templates sound stale fast.
+//
+// We do at least use a fully uniform distribution for inserting
+// characters and their qualities into a given prompt. This makes it
+// so that the characters with the greatest number of interesting
+// qualities appear the most often.
+//
+var completelyUniformDistribution = false;
+
+
+function arrWithoutIndex( arr, i ) {
+    var result = arr.slice();
+    result.splice( i, 1 );
+    return result;
+}
+
+function Generator() {}
+Generator.prototype.init = function ( weight, generate ) {
+    this.weight = weight;
+    this.generate = generate;
+    return this;
+};
+
+function randomlyPickDouble( max ) {
+    if ( max <= 0 )
         throw new Error();
-    do {
-        var i = Math.floor( Math.random() * max );
-    } while ( i === max );
-    return i;
+    do { var result = Math.random() * max; } while ( result === max );
+    return result;
 }
 
-function randomlyPickElement( arr ) {
-    return arr[ randomlyPickNat( arr.length ) ];
+function randomlyPickNat( max ) {
+    return Math.floor( randomlyPickDouble( max ) );
 }
 
-// TODO: See if we even need this now that all our weights are 1 in
-// practice.
 function randomlyPickWeighted( arr ) {
     var n = arr.length;
     if ( n === 0 )
@@ -33,7 +63,7 @@ function randomlyPickWeighted( arr ) {
     _.arrEach( arr, function ( elem ) {
         total += elem.weight;
     } );
-    var chosenWeight = randomlyPickNat( total );
+    var chosenWeight = randomlyPickDouble( total );
     return _.arrAny( arr, function ( elem ) {
         if ( chosenWeight <= elem.weight )
             return { val: elem.val };
@@ -42,50 +72,98 @@ function randomlyPickWeighted( arr ) {
     } ).val;
 }
 
-function randomlyPickCharacter( continuityData ) {
-    return randomlyPickElement( continuityData.characters );
+function generatorWrap( result ) {
+    return new Generator().init( 1, _.kfn( result ) );
+};
+
+function generatorJoin( generators ) {
+    var weight = 0;
+    var weightedArr = _.arrMap( generators, function ( generator ) {
+        weight += generator.weight;
+        return { weight: generator.weight, val: generator };
+    } );
+    return new Generator().init( weight, function () {
+        return randomlyPickWeighted( weightedArr ).generate();
+    } );
 }
 
-// Instead of picking a character at random and then picking one of
-// its qualities, this picks among all characters' qualities and then
-// use that to pick a character. That way the least interesting
-// characters are picked less often.
-function randomlyPickCharacterAndQuality( continuityData ) {
-    return randomlyPickElement(
-        _.arrMappend( continuityData.characters,
-            function ( character ) {
+function generatorMap( generator, func ) {
+    return new Generator().init( generator.weight, function () {
+        return func( generator.generate() );
+    } );
+}
+
+function generatorOfElement( elements ) {
+    return generatorJoin( _.arrMap( elements,
+        function ( element, i ) {
+        
+        return generatorWrap( {
+            chosen: element,
+            remaining: arrWithoutIndex( elements, i )
+        } );
+    } ) );
+}
+
+function numberOfPermutations( numItems, numSelected ) {
+    if ( numItems < numSelected )
+        return 0;
+    var result = 1;
+    for ( var i = 0; i < numSelected; i++ )
+        result *= numItems - i;
+    return result;
+}
+
+function generatorOfDistinctElements( elements, n ) {
+    return new Generator().init(
+        numberOfPermutations( elements.length, n ),
+        function () {
+        
+        var elementsRemaining = elements.slice();
+        var results = [];
+        for ( var i = 0; i < n; i++ ) {
+            var resultI = randomlyPickNat( elementsRemaining.length );
+            results.push( elementsRemaining[ resultI ] );
+            // Remove the element from the elements remaining.
+            arrWithoutIndex( elementsRemaining, resultI );
+        }
+        return { chosen: results, remaining: elementsRemaining };
+    } );
+}
+
+function generatorOfCharacter( continuityData ) {
+    return generatorOfElement( continuityData.characters );
+}
+
+function generatorOfCharacterAndQualities(
+    continuityData, numQualities ) {
+    
+    return generatorJoin( _.arrMap( continuityData.characters,
+        function ( character, i ) {
+        
+        var characterAndRemaining = {
+            chosen: character,
+            remaining: arrWithoutIndex( continuityData.characters, i )
+        };
+        
+        return generatorMap(
+            generatorOfDistinctElements(
+                character.qualities, numQualities ),
+            function ( qualities ) {
             
-            return _.arrMap( character.qualities,
-                function ( quality ) {
-                
-                return { character: character, quality: quality };
-            } );
-        } ) );
-}
-
-function randomlyPickQuality( character ) {
-    return randomlyPickElement( character.qualities );
+            return {
+                character: characterAndRemaining,
+                qualities: qualities
+            };
+        } );
+    } ) );
 }
 
 var prompts = [];
 
-// TODO: See what we should do when there are fewer than three
-// characters or a character has fewer than two qualities. Right now
-// the prompts may loop infinitely as they try to pick distinct
-// entries.
-function randomlyPickPrompt( continuityData ) {
-    return randomlyPickWeighted( prompts )( continuityData );
-}
-
-function hasStringDuplicates( arr ) {
-    var seen = {};
-    return _.arrAny( arr, function ( str ) {
-        var k = "|" + str;
-        if ( _.hasOwn( seen, k ) )
-            return true;
-        seen[ k ] = true;
-        return false;
-    } );
+function generatorOfPrompt( continuityData ) {
+    return generatorJoin( _.arrMap( prompts, function ( prompt ) {
+        return prompt( continuityData );
+    } ) );
 }
 
 function addDslPrompt( prompt ) {
@@ -99,80 +177,97 @@ function addDslPrompt( prompt ) {
         } );
     }
     
-    // NOTE: Right now all of the following behave very similarly, but
-    // in general we might like different kinds of templates to have
-    // different kinds of behavior.
-    
-    if ( /\[a\]/.test( prompt )
-        && /\[having a detail\]/.test( prompt )
-        && !/\[having another detail\]/.test( prompt )
-        && /\[b\]/.test( prompt )
-        && /\[c\]/.test( prompt ) ) {
+    prompts.push( function ( continuityData ) {
+        var genCharacter = generatorOfCharacter( continuityData );
+        var genCharacterAndQuality =
+            generatorOfCharacterAndQualities( continuityData, 1 );
+        var genCharacterAndTwoQualities =
+            generatorOfCharacterAndQualities( continuityData, 2 );
         
-        prompts.push( { weight: 1, val: function ( continuityData ) {
-            do {
-                var a =
-                    randomlyPickCharacterAndQuality( continuityData );
-                var charB = randomlyPickCharacter( continuityData );
-                var charC = randomlyPickCharacter( continuityData );
-            } while (
-                hasStringDuplicates(
-                    [ a.character.name, charB.name, charC.name ] ) );
+        // NOTE: Right now all of the following behave very similarly,
+        // but in general we might like different kinds of templates
+        // to have different kinds of behavior.
+        
+        if ( /\[a\]/.test( prompt )
+            && /\[having a detail\]/.test( prompt )
+            && !/\[having another detail\]/.test( prompt )
+            && /\[b\]/.test( prompt )
+            && /\[c\]/.test( prompt ) ) {
             
-            return replaceWith( {
-                "a": a.character.name,
-                "having a detail": a.quality,
-                "b": charB.name,
-                "c": charC.name
+            return new Generator().init(
+                completelyUniformDistribution ?
+                    genCharacterAndQuality.weight *
+                        (genCharacter.weight - 1) *
+                        (genCharacter.weight - 2) :
+                    1,
+                function () {
+                
+                var a = genCharacterAndQuality.generate();
+                var charB = generatorOfElement(
+                    a.character.remaining ).generate();
+                var charC = generatorOfElement(
+                    charB.remaining ).generate();
+                
+                return replaceWith( {
+                    "a": a.character.chosen.name,
+                    "having a detail": a.qualities.chosen[ 0 ],
+                    "b": charB.chosen.name,
+                    "c": charC.chosen.name
+                } );
             } );
-        } } );
-        
-    } else if ( /\[a\]/.test( prompt )
-        && /\[having a detail\]/.test( prompt )
-        && !/\[having another detail\]/.test( prompt )
-        && /\[b\]/.test( prompt )
-        && !/\[c\]/.test( prompt ) ) {
-        
-        prompts.push( { weight: 1, val: function ( continuityData ) {
-            do {
-                var a =
-                    randomlyPickCharacterAndQuality( continuityData );
-                var charB = randomlyPickCharacter( continuityData );
-            } while ( a.character.name === charB.name );
             
-            return replaceWith( {
-                "a": a.character.name,
-                "having a detail": a.quality,
-                "b": charB.name
-            } );
-        } } );
-        
-    } else if ( /\[a\]/.test( prompt )
-        && /\[having a detail\]/.test( prompt )
-        && /\[having another detail\]/.test( prompt )
-        && /\[b\]/.test( prompt )
-        && !/\[c\]/.test( prompt ) ) {
-        
-        prompts.push( { weight: 1, val: function ( continuityData ) {
-            do {
-                var a =
-                    randomlyPickCharacterAndQuality( continuityData );
-                var charB = randomlyPickCharacter( continuityData );
-                var havingAnotherQuality =
-                    randomlyPickQuality( a.character );
-            } while ( a.character.name === charB.name
-                || a.quality === havingAnotherQuality );
+        } else if ( /\[a\]/.test( prompt )
+            && /\[having a detail\]/.test( prompt )
+            && !/\[having another detail\]/.test( prompt )
+            && /\[b\]/.test( prompt )
+            && !/\[c\]/.test( prompt ) ) {
             
-            return replaceWith( {
-                "a": a.character.name,
-                "having a detail": a.quality,
-                "having another detail": havingAnotherQuality,
-                "b": charB.name
+            return new Generator().init(
+                completelyUniformDistribution ?
+                    genCharacterAndQuality.weight *
+                        (genCharacter.weight - 1) :
+                    1,
+                function () {
+                
+                var a = genCharacterAndQuality.generate();
+                var charB = generatorOfElement(
+                    a.character.remaining ).generate();
+                
+                return replaceWith( {
+                    "a": a.character.chosen.name,
+                    "having a detail": a.qualities.chosen[ 0 ],
+                    "b": charB.chosen.name
+                } );
             } );
-        } } );
-    } else {
-        throw new Error();
-    }
+            
+        } else if ( /\[a\]/.test( prompt )
+            && /\[having a detail\]/.test( prompt )
+            && /\[having another detail\]/.test( prompt )
+            && /\[b\]/.test( prompt )
+            && !/\[c\]/.test( prompt ) ) {
+            
+            return new Generator().init(
+                completelyUniformDistribution ?
+                    genCharacterAndTwoQualities.weight *
+                        (genCharacter.weight - 1) :
+                    1,
+                function () {
+                
+                var a = genCharacterAndTwoQualities.generate();
+                var charB = generatorOfElement(
+                    a.character.remaining ).generate();
+                
+                return replaceWith( {
+                    "a": a.character.chosen.name,
+                    "having a detail": a.qualities.chosen[ 0 ],
+                    "having another detail": a.qualities.chosen[ 1 ],
+                    "b": charB.chosen.name
+                } );
+            } );
+        } else {
+            throw new Error();
+        }
+    } );
 }
 
 _.arrEach( [
