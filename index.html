@@ -19,10 +19,15 @@ Copyright 2015 Ross Angle. Released under the MIT License.
 <p>Generate writing prompts for...</p>
 
 <p><button id="generate-steven-universe">Steven Universe</button></p>
-<p><button id="generate-magical-radia"
-    >Magical Radia (an original story)</button></p>
 <p><button id="generate-mega-man-classic"
     >Mega Man classic</button></p>
+<p><button id="generate-magical-radia"
+    >Magical Radia (an original story)</button></p>
+<p><button id="generate-mikkamon"
+    >Mikkamon (an original story)</button></p>
+<p><button id="generate-myai">MyAI (an original story)</button></p>
+<p><button id="generate-story-about-that"
+    >Story about That (an original story)</button></p>
 
 <div id="result" disabled cols="80" rows="24"></div>
 
@@ -33,7 +38,7 @@ var _ = rocketnia.lathe;
 <script type="text/javascript" src="monday-comics.js"></script>
 <script type="text/javascript" src="data-for-steven-universe.js">
     </script>
-<script type="text/javascript" src="data-for-magical-radia.js">
+<script type="text/javascript" src="data-for-original-works.js">
     </script>
 <script type="text/javascript" src="data-for-mega-man-classic.js">
     </script>
@@ -56,15 +61,26 @@ window.onload = function () {
         
         generateUsing( dataForStevenUniverse );
     } } );
-    _.appendDom( _.el( "generate-magical-radia" ), { click:
-        function () {
-        
-        generateUsing( dataForMagicalRadia );
-    } } );
     _.appendDom( _.el( "generate-mega-man-classic" ), { click:
         function () {
         
         generateUsing( dataForMegaManClassic );
+    } } );
+    _.appendDom( _.el( "generate-magical-radia" ), { click:
+        function () {
+        
+        generateUsing( dataForOriginalWorks.magicalRadia );
+    } } );
+    _.appendDom( _.el( "generate-mikkamon" ), { click: function () {
+        generateUsing( dataForOriginalWorks.mikkamon );
+    } } );
+    _.appendDom( _.el( "generate-myai" ), { click: function () {
+        generateUsing( dataForOriginalWorks.myai );
+    } } );
+    _.appendDom( _.el( "generate-story-about-that" ), { click:
+        function () {
+        
+        generateUsing( dataForOriginalWorks.storyAboutThat );
     } } );
 };
 

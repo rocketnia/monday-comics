@@ -300,7 +300,9 @@ _.arrEach( [
     "[b] requires someone good at [having a detail], and [c] " +
         "volunteers [a].",
     "[b] requires someone good at [having a detail], and [a] " +
-        "vouches for [c]."
+        "vouches for [c].",
+    "A catastrophe must be averted by [a] [having a detail], " +
+        "but only [b] is aware of the danger."
 ], function ( prompt ) {
     addDslPrompt( prompt );
 } );
