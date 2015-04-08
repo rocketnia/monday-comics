@@ -226,3 +226,66 @@ return {
 
 
 })();
+
+
+
+dataForOriginalWorks.megaMegaMegan = (function () {
+
+
+var characters = [];
+
+characters.push( { name: "Megan", qualities: [
+    "solving problems using violence",
+    "picking on people",
+    "wielding ray guns",
+    "wearing Bibi-chan's husk",
+    "getting sucked into stories",
+    "using the environment acrobatically"
+] } );
+
+characters.push( { name: "Darren", qualities: [
+    "setting people up for falls",
+    "playing video games",
+    "getting sucked into stories",
+    "gardening",
+    "wearing Queen Ratched's husk"
+] } );
+
+characters.push( { name: "Queen Ratched", qualities: [
+    "commanding a robot government",
+    "doing civil engineering",
+    "producing parties and gifts",
+    "relaxing with buddies"
+] } );
+
+characters.push( { name: "Bread", qualities: [
+    "being springy",
+    "rafting",
+    "baking bread-based robots"
+] } );
+
+characters.push( { name: "Butter", qualities: [
+    "being a diplomat",
+    "making things slippery",
+    "sledding"
+] } );
+
+characters.push( { name: "Bibi-chan", qualities: [
+    "unlocking doors",
+    "climbing ladders",
+    "helping passersby",
+    "overcoming common fears"
+] } );
+
+characters.push( { name: "Saucer Service Agent", qualities: [
+    "transporting nobles",
+    "doing spectacular team stunts",
+    "being flat"
+] } );
+
+return {
+    characters: characters
+};
+
+
+})();

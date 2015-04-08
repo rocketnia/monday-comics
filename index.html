@@ -28,6 +28,9 @@ Copyright 2015 Ross Angle. Released under the MIT License.
 <p><button id="generate-myai">MyAI (an original story)</button></p>
 <p><button id="generate-story-about-that"
     >Story about That (an original story)</button></p>
+<p><button id="generate-mega-mega-megan"
+    >Mega Mega Megan / Bibi-chan
+    (interlinked original stories)</button></p>
 
 <div id="result" disabled cols="80" rows="24"></div>
 
@@ -81,6 +84,11 @@ window.onload = function () {
         function () {
         
         generateUsing( dataForOriginalWorks.storyAboutThat );
+    } } );
+    _.appendDom( _.el( "generate-mega-mega-megan" ), { click:
+        function () {
+        
+        generateUsing( dataForOriginalWorks.megaMegaMegan );
     } } );
 };
 
