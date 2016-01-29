@@ -1,11 +1,5 @@
-function pickStep( steps ) {
+function pickStep( plot ) {
     // TODO
-}
-function pickNode( nodes ) {
-    // TODO
-}
-function plotWithNodesAndSteps( plot, nodes, steps ) {
-    return { nodes: nodes, steps: steps };
 }
 function makeStep( start, stop ) {
     return { type: "step", name: gensym(), start: start, stop: stop };
@@ -14,104 +8,113 @@ function stepsEq( a, b ) {
     return a.name === b.name;
 }
 
+function Plot() {}
+Plot.prototype.init = function () {
+    this.nodes_ = {};
+    this.steps_ = {};
+};
+function makePlot() {
+    return new Plot().init();
+}
+Plot.prototype.minusNode = function ( var_args ) {
+    var nodeNames = arguments;
+    // TODO
+};
+Plot.prototype.minusStep = function ( var_args ) {
+    // TODO
+};
+Plot.prototype.plusNode = function ( node ) {
+    // TODO
+};
+Plot.prototype.plusStep = function ( step ) {
+    // TODO
+};
+Plot.prototype.plusSteps = function ( var_args ) {
+    var nodeNames = arguments;
+    // TODO
+};
+Plot.prototype.getNode = function ( nodeName ) {
+    // TODO
+};
+Plot.prototype.eachStep = function ( body ) {
+    // TODO
+};
+
 addPlotDevelopment( function ( plot ) {
     // Add a beat to any step.
     
-    var step = pickStep( plot.steps );
+    var step = pickStep( plot );
     if ( step === null )
         return plot;
     var node = { type: "doNothing", name: gensym() };
-    return plotWithNodesAndSteps( plot,
-        plot.nodes.plusEntry( node.name, node ),
-        plot.steps.minusTruth( step ).
-            plusTruth( makeStep( step.start, node.name ) ).
-            plusTruth( makeStep( node.name, stop: step.stop ) ) );
+    return plot.plusNode( node ).minusStep( step ).
+        plusSteps( step.start, node.name, step.stop );
 } );
 addPlotDevelopment( function ( plot ) {
     // Turn any step into a converging choice of two possible steps.
     
-    var step = pickStep( plot.steps );
+    var step = pickStep( plot );
     if ( step === null )
         return plot;
     var start = { type: "startChoice", name: gensym() };
     var stop = { type: "stopChoice", name: gensym() };
-    return plotWithNodesAndSteps( plot,
-        plot.nodes.
-            plusEntry( start.name, start ).
-            plusEntry( stop.name, stop ),
-        plot.steps.minusTruth( step ).
-            plusTruth( makeStep( step.start, start.name ) ).
-            plusTruth( makeStep( start.name, stop.name ) ).
-            plusTruth( makeStep( start.name, stop.name ) ).
-            plusTruth( makeStep( stop.name, stop: step.stop ) ) );
+    return plot.plusNode( start, stop ).minusStep( step ).
+        plusSteps( step.start, start.name, stop.name, step.stop ).
+        plusSteps( start.name, stop.name );
 } );
 addPlotDevelopment( function ( plot ) {
     // Turn any step into a converging concurrency of two steps.
     
-    var step = pickStep( plot.steps );
+    var step = pickStep( plot );
     if ( step === null )
         return plot;
     var start = { type: "startConcurrency", name: gensym() };
     var stop = { type: "stopConcurrency", name: gensym() };
-    return plotWithNodesAndSteps( plot,
-        plot.nodes.
-            plusEntry( start.name, start ).
-            plusEntry( stop.name, stop ),
-        plot.steps.minusTruth( step ).
-            plusTruth( makeStep( step.start, start.name ) ).
-            plusTruth( makeStep( start.name, stop.name ) ).
-            plusTruth( makeStep( start.name, stop.name ) ).
-            plusTruth( makeStep( stop.name, stop: step.stop ) ) );
+    return plot.plusNode( start, stop ).minusStep( step ).
+        plusSteps( step.start, start.name, stop.name, step.stop ).
+        plusSteps( start.name, stop.name );
 } );
 addPlotDevelopment( function ( plot ) {
     // Add a fresh puzzle dependency to any step by foreshadowing it and lampshading it all at once.
     
-    var step = pickStep( plot.steps );
+    var step = pickStep( plot );
     if ( step === null )
         return plot;
     var resource = gensym();
     var foreshadow = { type: "foreshadow", name: gensym(), resource: resource, bookend: null };
     var lampshade = { type: "lampshade", name: gensym(), resource: resource, bookend: null };
-    return plotWithNodesAndSteps( plot,
-        plot.nodes.plusEntry( node.name, node ),
-        plot.steps.minusTruth( step ).
-            plusTruth( makeStep( step.start, foreshadow.name ) ).
-            plusTruth( makeStep( foreshadow.name, lampshade.name ) ).
-            plusTruth( makeStep( lampshade.name, step.stop ) ) );
+    return plot.plusNode( node ).minusStep( step ).plusSteps(
+        step.start, foreshadow.name, lampshade.name, step.stop );
 } );
 addPlotDevelopment( function ( plot ) {
     // Add a non-consuming use to any foreshadowing.
     
-    var step = pickStep( plot.steps );
+    var step = pickStep( plot );
     if ( step === null )
         return plot;
-    var foreshadowing = plot.get( step.start );
+    var foreshadowing = plot.getNode( step.start );
     if ( foreshadowing.type !== "foreshadow" )
         return plot;
     
     var node = { type: "use", name: gensym(), resource: foreshadowing.resource };
-    return plotWithNodesAndSteps( plot,
-        plot.nodes.plusEntry( node.name, node ),
-        plot.steps.minusTruth( step ).
-            plusTruth( makeStep( step.start, node.name ) ).
-            plusTruth( makeStep( node.name, step.stop ) ) );
+    return plot.plusNode( node ).minusStep( step ).
+        plusSteps( step.start, node.name, step.stop );
 } );
 addPlotDevelopment( function ( plot ) {
     // Migrate all but one branch of a branching node earlier in time.
     
-    var step = pickStep( plot.steps );
+    var step = pickStep( plot );
     if ( step === null )
         return plot;
-    var movingNode = plot.get( step.start );
+    var movingNode = plot.getNode( step.start );
     if ( !(movingNode.type === "startConcurrency"
         || movingNode.type === "startChoice") )
         return plot;
-    var newNodes = plot.nodes;
-    var newSteps = plot.steps;
-    newSteps.each( function ( name, intoStep ) {
+    var newPlot = plot;
+    newPlot.eachStep( function ( name, intoStep ) {
         if ( intoStep.stop !== movingNode.name )
             return;
-        var otherNode = plot.get( intoStep.start );
+        var otherNode = plot.getNode( intoStep.start );
         
         if ( otherNode.type === "doNothing"
             || otherNode.type === "use" ) {
@@ -125,18 +128,13 @@ addPlotDevelopment( function ( plot ) {
             // * - m - o - *
             //       `---- *
             
-            newSteps = newSteps.
-                minusTruth( step ).
-                minusTruth( intoStep ).
-                plusTruth( makeStep( otherNode.name, step.stop ) ).
-                plusTruth(
-                    makeStep( movingNode.name, otherNode.name ) );
-            newSteps.each( function ( name, prevStep ) {
+            newPlot = newPlot.minusStep( step, intoStep ).plusSteps(
+                movingNode.name, otherNode.name, step.stop );
+            newPlot.eachStep( function ( name, prevStep ) {
                 if ( prevStep.stop !== otherNode.name )
                     return;
-                newSteps = newSteps.minusTruth( prevStep ).
-                    plusTruth(
-                        makeStep( prevStep.start, movingStep.name ) );
+                newPlot = newPlot.minusStep( prevStep ).
+                    plusSteps( prevStep.start, movingStep.name );
             } );
             
         } else if (
@@ -233,7 +231,7 @@ addPlotDevelopment( function ( plot ) {
             throw new Error();
         }
     } );
-    return plotWithNodesAndSteps( plot, newNodes, newSteps );
+    return newPlot;
 } );
 
 // TODO:
@@ -244,13 +242,13 @@ addPlotDevelopment( function ( plot ) {
 addPlotDevelopment( function ( plot ) {
     // Migrate a foreshadowing earlier in time, as long as it doesn't go earlier than its bookend (if any). If it crosses a branching node, add a corresponding lampshading on the other branch. If it encounters a lampshading of the same resource, merge the region by removing both the lampshading and the foreshadowing.
     
-    var step = pickStep( plot.steps );
+    var step = pickStep( plot );
     if ( step === null )
         return plot;
-    var foreshadowing = plot.get( step.stop );
+    var foreshadowing = plot.getNode( step.stop );
     if ( foreshadowing.type !== "foreshadow" )
         return plot;
-    var otherNode = plot.get( step.start );
+    var otherNode = plot.getNode( step.start );
     
     if ( (otherNode.type === "foreshadow"
             || otherNode.type === "lampshade")
@@ -263,28 +261,24 @@ addPlotDevelopment( function ( plot ) {
     if ( otherNode.type === "lampshade"
         && otherNode.resource === foreshadowing.resource ) {
         
-        var newSteps = plot.steps.minusTruth( step );
-        newSteps.each( function ( name, prevStep ) {
+        var newPlot = plot.minusStep( step );
+        newPlot.eachStep( function ( name, prevStep ) {
             if ( prevStep.stop !== step.start )
                 return;
-            newSteps.each( function ( name, nextStep ) {
+            newPlot.eachStep( function ( name, nextStep ) {
                 if ( nextStep.start !== step.stop )
                     return;
-                newSteps = newSteps.plusTruth(
-                    makeStep( prevStep.start, nextStep.stop ) );
+                newPlot = newPlot.plusSteps(
+                    prevStep.start, nextStep.stop );
             } );
         } );
-        newSteps.each( function ( name, otherStep ) {
+        newPlot.eachStep( function ( name, otherStep ) {
             if ( !(otherStep.stop === step.start
                 || otherStep.start === step.stop) )
                 return;
-            newSteps = newSteps.minusTruth( step );
+            newPlot = newPlot.minusStep( step );
         } );
-        return plotWithNodesAndSteps( plot,
-            plot.nodes.
-                minusEntry( step.start ).
-                minusEntry( step.stop ),
-            newSteps );
+        return newPlot.minusNode( step.start, step.stop );
     }
     
     if ( otherNode.type === "doNothing"
@@ -296,35 +290,35 @@ addPlotDevelopment( function ( plot ) {
         || otherNode.type === "startChoice"
         || otherNode.type === "stopChoice" ) {
         
-        var newNodes = plot.nodes.minusEntry( foreshadowing.name );
-        var newSteps = plot.steps.minusTruth( step );
-        newSteps.each( function ( name, nextStep ) {
+        var newPlot =
+            plot.minusNode( foreshadowing.name ).minusStep( step );
+        newPlot.eachStep( function ( name, nextStep ) {
             if ( nextStep.start !== otherNode.name )
                 return;
             if ( stepsEq( step, nextStep ) )
                 return;
             var lampshading = { type: "lampshade", name: gensym(), resource: foreshadowing.resource, bookend: null };
-            newNodes = newNodes.plusEntry( lampshading.name, lampshading );
-            newSteps = newSteps.minusTruth( nextStep ).
-                plusTruth( makeStep( nextStep.start, lampshading.name ) ).
-                plusTruth( makeStep( lampshading.name, nextStep.stop ) );
+            newPlot = newPlot.plusNode( lampshading ).
+                minusStep( nextStep ).
+                plusSteps(
+                    nextStep.start, lampshading.name, nextStep.stop );
         } );
-        newSteps.each( function ( name, nextStep ) {
+        newPlot.each( function ( name, nextStep ) {
             if ( nextStep.start !== foreshadowing.name )
                 return;
-            newSteps = newSteps.minusTruth( nextStep ).
-                plusTruth( makeStep( otherNode.name, nextStep.stop ) );
+            newPlot = newPlot.minusStep( nextStep ).
+                plusSteps( otherNode.name, nextStep.stop );
         } );
-        newSteps.each( function ( name, prevStep ) {
+        newPlot.each( function ( name, prevStep ) {
             if ( prevStep.stop !== otherNode.name )
                 return;
             var newForeshadowing = { type: "foreshadow", name: gensym(), resource: foreshadowing.resource, bookend: foreshadowing.bookend };
-            newNodes = newNodes.plusEntry( newForeshadowing.name, newForeshadowing );
-            newSteps = newSteps.minusTruth( prevStep ).
-                plusTruth( makeStep( prevStep.start, newForeshadowing.name ) ).
-                plusTruth( makeStep( newForeshadowing.name, prevStep.stop ) );
+            newPlot = newPlot.plusNode( newForeshadowing ).
+                minusStep( prevStep ).
+                plusSteps( prevStep.start, newForeshadowing.name,
+                    prevStep.stop );
         } );
-        return plotWithNodesAndSteps( plot, newNodes, newSteps );
+        return newPlot;
     } else if ( otherNode.type === "startStory" ) {
         return plot;
     } else if ( otherNode.type === "stopStory" ) {
@@ -336,13 +330,13 @@ addPlotDevelopment( function ( plot ) {
 addPlotDevelopment( function ( plot ) {
     // Migrate a lampshading later in time, as long as it doesn't go later than its bookend (if any). If it crosses a rejoining node, add a corresponding foreshadowing on the other branch. If it encounters a foreshadowing of the same resource, merge the region by removing both the lampshading and the foreshadowing.
     
-    var step = pickStep( plot.steps );
+    var step = pickStep( plot );
     if ( step === null )
         return plot;
-    var lampshading = plot.get( step.start );
+    var lampshading = plot.getNode( step.start );
     if ( lampshading.type !== "lampshade" )
         return plot;
-    var otherNode = plot.get( step.stop );
+    var otherNode = plot.getNode( step.stop );
     
     if ( (otherNode.type === "lampshade"
             || otherNode.type === "foreshadow")
@@ -355,28 +349,24 @@ addPlotDevelopment( function ( plot ) {
     if ( otherNode.type === "foreshadow"
         && otherNode.resource === lampshading.resource ) {
         
-        var newSteps = plot.steps.minusTruth( step );
-        newSteps.each( function ( name, prevStep ) {
+        var newPlot = plot.minusStep( step );
+        newPlot.eachStep( function ( name, prevStep ) {
             if ( prevStep.stop !== step.start )
                 return;
-            newSteps.each( function ( name, nextStep ) {
+            newPlot.eachStep( function ( name, nextStep ) {
                 if ( nextStep.start !== step.stop )
                     return;
-                newSteps = newSteps.plusTruth(
-                    makeStep( prevStep.start, nextStep.stop ) );
+                newPlot = newPlot.plusSteps(
+                    prevStep.start, nextStep.stop );
             } );
         } );
-        newSteps.each( function ( name, otherStep ) {
+        newPlot.eachStep( function ( name, otherStep ) {
             if ( !(otherStep.stop === step.start
                 || otherStep.start === step.stop) )
                 return;
-            newSteps = newSteps.minusTruth( step );
+            newPlot = newPlot.minusStep( step );
         } );
-        return plotWithNodesAndSteps( plot,
-            plot.nodes.
-                minusEntry( step.start ).
-                minusEntry( step.stop ),
-            newSteps );
+        return newPlot.minusNode( step.start, step.stop );
     }
     
     if ( otherNode.type === "doNothing"
@@ -388,36 +378,35 @@ addPlotDevelopment( function ( plot ) {
         || otherNode.type === "startChoice"
         || otherNode.type === "stopChoice" ) {
         
-        var newNodes = plot.nodes.minusEntry( lampshading.name );
-        var newSteps = plot.steps.minusTruth( step );
-        if ( otherNode.type === "stopChoice" )
-            newSteps.each( function ( name, prevStep ) {
-                if ( prevStep.stop !== otherNode.name )
-                    return;
-                if ( stepsEq( step, prevStep ) )
-                    return;
-                var foreshadowing = { type: "foreshadow", name: gensym(), resource: lampshading.resource, bookend: null };
-                newNodes = newNodes.plusEntry( foreshadowing.name, foreshadowing );
-                newSteps = newSteps.minusTruth( prevStep ).
-                    plusTruth( makeStep( prevStep.start, foreshadowing.name ) ).
-                    plusTruth( makeStep( foreshadowing.name, prevStep.stop ) );
-            } );
-        newSteps.each( function ( name, prevStep ) {
+        var newPlot =
+            plot.minusNode( lampshading.name ).minusStep( step );
+        newPlot.eachStep( function ( name, prevStep ) {
+            if ( prevStep.stop !== otherNode.name )
+                return;
+            if ( stepsEq( step, prevStep ) )
+                return;
+            var foreshadowing = { type: "foreshadow", name: gensym(), resource: lampshading.resource, bookend: null };
+            newPlot = newPlot.plusNode( foreshadowing ).
+                minusStep( prevStep ).
+                plusSteps( prevStep.start, foreshadowing.name,
+                    prevStep.stop );
+        } );
+        newPlot.eachStep( function ( name, prevStep ) {
             if ( prevStep.stop !== lampshading.name )
                 return;
-            newSteps = newSteps.minusTruth( prevStep ).
-                plusTruth( makeStep( prevStep.start, otherNode.name ) );
+            newPlot = newPlot.minusStep( prevStep ).
+                plusSteps( prevStep.start, otherNode.name );
         } );
-        newSteps.each( function ( name, nextStep ) {
+        newPlot.eachStep( function ( name, nextStep ) {
             if ( nextStep.stop !== otherNode.name )
                 return;
             var newLampshading = { type: "lampshade", name: gensym(), resource: lampshading.resource, bookend: lampshading.bookend };
-            newNodes = newNodes.plusEntry( newLampshading.name, newLampshading );
-            newSteps = newSteps.minusTruth( nextStep ).
-                plusTruth( makeStep( nextStep.start, newLampshading.name ) ).
-                plusTruth( makeStep( newLampshading.name, nextStep.stop ) );
+            newPlot = newPlot.plusStep( newLampshading ).
+                minusTruth( nextStep ).
+                plusSteps( nextStep.start, newLampshading.name,
+                    nextStep.stop );
         } );
-        return plotWithNodesAndSteps( plot, newNodes, newSteps );
+        return newPlot;
     } else if ( otherNode.type === "stopStory" ) {
         return plot;
     } else if ( otherNode.type === "startStory" ) {
@@ -438,21 +427,19 @@ addPlotDevelopment( function ( plot ) {
 addPlotDevelopment( function ( plot ) {
     // Associate a bookendless lampshading with a later bookendless foreshadowing. Now they're bookends of each other.
     
-    var step = pickStep( plot.steps );
+    var step = pickStep( plot );
     if ( step === null )
         return plot;
-    var lampshading = plot.get( step.start );
+    var lampshading = plot.getNode( step.start );
     if ( lampshading.type !== "lampshade" )
         return plot;
-    var foreshadowing = plot.get( step.stop );
+    var foreshadowing = plot.getNode( step.stop );
     if ( foreshadowing.type !== "foreshadow" )
         return plot;
     
-    return plotWithNodesAndSteps( plot,
-        plot.nodes.minusEntry( step.start ).minusEntry( step.stop ).
-            plusEntry( step.start, { type: "foreshadow", name: step.start, resource: foreshadowing.resource, bookend: { val: lampshading.resource } } ).
-            plusEntry( step.stop, { type: "lampshade", name: step.stop, resource: lampshading.resource, bookend: { val: foreshadowing.resource } } ),
-        plot.steps );
+    return plot.minusNode( step.start, step.stop ).
+        plusNode( { type: "foreshadow", name: step.start, resource: foreshadowing.resource, bookend: { val: lampshading.resource } } ).
+        plusNode( { type: "lampshade", name: step.stop, resource: lampshading.resource, bookend: { val: foreshadowing.resource } } );
 } );
 
 // TODO:
