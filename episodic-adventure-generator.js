@@ -402,7 +402,7 @@ addPlotDevelopment( function ( plot ) {
                 return;
             var newLampshading = { type: "lampshade", name: gensym(), resource: lampshading.resource, bookend: lampshading.bookend };
             newPlot = newPlot.plusStep( newLampshading ).
-                minusTruth( nextStep ).
+                minusStep( nextStep ).
                 plusSteps( nextStep.start, newLampshading.name,
                     nextStep.stop );
         } );
