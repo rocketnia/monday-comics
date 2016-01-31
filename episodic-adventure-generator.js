@@ -1,5 +1,20 @@
+// episodic-adventure-generator.js
+// Copyright 2016 Ross Angle. Released under the MIT License.
+
+// NOTE: This file depends on randomlyPickNat() from monday-comics.js.
+
+var nextGensymIndex = 1;
+function gensym() {
+    return "gs" + (nextGensymIndex++);
+}
+
+function randomlyPickElement( arr ) {
+    var n = arr.length;
+    return n === 0 ? null : { val: arr[ randomlyPickNat( n ) ] };
+}
+
 function pickStep( plot ) {
-    // TODO
+    return plot.randomlyPickStep();
 }
 function makeStep( start, stop ) {
     return { type: "step", name: gensym(), start: start, stop: stop };
@@ -8,37 +23,196 @@ function stepsEq( a, b ) {
     return a.name === b.name;
 }
 
+function labelPlotNode( node ) {
+    if ( node.type === "doNothing" ) {
+        return "Do nothing";
+    } else if ( node.type === "lampshade" ) {
+        return "Lampshade " + JSON.stringify( node.resource ) +
+            (node.bookend === null ? "" :
+                " (bookended by " +
+                JSON.stringify( node.bookend.val ) + ")");
+    } else if ( node.type === "foreshadow" ) {
+        return "Foreshadow " + JSON.stringify( node.resource ) +
+            (node.bookend === null ? "" :
+                " (bookended by " +
+                JSON.stringify( node.bookend.val ) + ")");
+    } else if ( node.type === "use" ) {
+        return "Use " + JSON.stringify( node.resource );
+    } else if ( node.type === "startConcurrency" ) {
+        return "Start concurrency";
+    } else if ( node.type === "stopConcurrency" ) {
+        return "Stop concurrency";
+    } else if ( node.type === "startChoice" ) {
+        return "Start choice";
+    } else if ( node.type === "stopChoice" ) {
+        return "Stop choice";
+    } else if ( node.type === "startStory" ) {
+        return "Start story";
+    } else if ( node.type === "stopStory" ) {
+        return "Stop story";
+    } else {
+        throw new Error();
+    }
+}
+
 function Plot() {}
-Plot.prototype.init = function () {
-    this.nodes_ = {};
-    this.steps_ = {};
+Plot.prototype.init_ = function ( nodes, steps ) {
+    this.nodes_ = nodes;
+    this.steps_ = steps;
+    return this;
 };
 function makePlot() {
-    return new Plot().init();
+    return new Plot().init_( {}, {} );
 }
-Plot.prototype.minusNode = function ( var_args ) {
-    var nodeNames = arguments;
-    // TODO
+Plot.prototype.toKey_ = function ( k ) {
+    return "|" + k;
+};
+Plot.prototype.minusNodeName = function ( var_args ) {
+    var self = this;
+    var nodes = _.arrFoldl( self.nodes_, arguments,
+        function ( nodes, nodeName, i ) {
+        
+        var newNodes = _.objCopy( nodes );
+        delete newNodes[ self.toKey_( nodeName ) ];
+        return newNodes;
+    } );
+    return new Plot().init_( nodes, self.steps_ );
 };
 Plot.prototype.minusStep = function ( var_args ) {
-    // TODO
+    var self = this;
+    var steps = _.arrFoldl( self.steps_, arguments,
+        function ( steps, step, i ) {
+        
+        var newSteps = _.objCopy( steps );
+        delete newSteps[ self.toKey_( step.name ) ];
+        return newSteps;
+    } );
+    return new Plot().init_( self.nodes_, steps );
 };
-Plot.prototype.plusNode = function ( node ) {
-    // TODO
+Plot.prototype.plusNode = function ( var_args ) {
+    var self = this;
+    var nodes = _.arrFoldl( self.nodes_, arguments,
+        function ( nodes, node, i ) {
+        
+        var newNodes = _.objCopy( nodes );
+        newNodes[ self.toKey_( node.name ) ] = node;
+        return newNodes;
+    } );
+    return new Plot().init_( nodes, self.steps_ );
 };
 Plot.prototype.plusStep = function ( step ) {
-    // TODO
+    var steps = _.objCopy( this.steps_ );
+    steps[ this.toKey_( step.name ) ] = step;
+    return new Plot().init_( this.nodes_, steps );
 };
 Plot.prototype.plusSteps = function ( var_args ) {
-    var nodeNames = arguments;
-    // TODO
+    var n = arguments.length;
+    var stepNames = arguments;
+    var result = this;
+    _.repeat( stepNames.length - 1, function ( i ) {
+        result = result.plusStep(
+            makeStep( stepNames[ i ], stepNames[ i + 1 ] ) );
+    } );
+    return result;
 };
 Plot.prototype.getNode = function ( nodeName ) {
-    // TODO
+    return this.nodes_[ this.toKey_( nodeName ) ];
 };
 Plot.prototype.eachStep = function ( body ) {
-    // TODO
+    _.objOwnEach( this.steps_, function ( k, step ) {
+        body( step );
+    } );
 };
+Plot.prototype.randomlyPickStep = function () {
+    var self = this;
+    var maybeResult = randomlyPickElement( _.acc( function ( y ) {
+        self.eachStep( function ( step ) {
+            y( step );
+        } );
+    } ) );
+    return maybeResult === null ? null : maybeResult.val;
+};
+Plot.prototype.toDotGraphNotation = function () {
+    var self = this;
+    var nameToDotName = {};
+    var dotNameToName = {};
+    var nameToLabel = {};
+    var nextGensymIndex = 1;
+    function gensym() {
+        return "gs" + (nextGensymIndex++);
+    }
+    function addName( name ) {
+        if ( _.hasOwn( nameToDotName, self.toKey_( name ) ) )
+            return;
+        var dotName = gensym();
+        nameToDotName[ self.toKey_( name ) ] = dotName;
+        dotNameToName[ self.toKey_( dotName ) ] = name;
+        nameToLabel[ self.toKey_( name ) ] = "";
+    }
+    _.objOwnEach( self.nodes_, function ( k, node ) {
+        addName( node.name );
+    } );
+    self.eachStep( function ( step ) {
+        addName( step.start );
+        addName( step.stop );
+    } );
+    _.objOwnEach( dotNameToName, function ( k, name ) {
+        var node = self.getNode( name );
+        if ( node === void 0 )
+            return;
+        nameToLabel[ self.toKey_( name ) ] = labelPlotNode( node );
+    } );
+    var result = "digraph g {\n";
+    _.objOwnEach( dotNameToName, function ( k, name ) {
+        function escapeDotDoubleQuotedString( s ) {
+            // TODO: The GraphViz documentation doesn't seem to be
+            // entirely clear about whether newlines need to be
+            // escaped. For now, we just don't support newlines. Add
+            // newline support once we investigate this further.
+            if ( /[\r\n]/.test( s ) )
+                throw new Error();
+            return "\"" + s.replace( /"/g, "\\\"" ) + "\"";
+        }
+        function escapeDotEscString( s ) {
+            return s.replace( /\\/g, "\\\\" );
+        }
+        function escapeDotDqEsc( s ) {
+            return escapeDotDoubleQuotedString(
+                escapeDotEscString( s ) );
+        }
+        var label = nameToLabel[ self.toKey_( name ) ];
+        result += "    " +
+            nameToDotName[ self.toKey_( name ) ] + " " +
+            "[label=" + escapeDotDqEsc( label ) + "];\n";
+    } );
+    self.eachStep( function ( step ) {
+        result += "    " +
+            nameToDotName[ self.toKey_( step.start ) ] + " -> " +
+            nameToDotName[ self.toKey_( step.stop ) ] + ";\n";
+    } );
+    result += "}\n";
+    return result;
+};
+Plot.prototype.toJson = function () {
+    var self = this;
+    return {
+        nodes: _.acc( function ( y ) {
+            _.objOwnEach( self.nodes_, function ( k, node ) {
+                y( node );
+            } );
+        } ),
+        steps: _.acc( function ( y ) {
+            self.eachStep( function ( step ) {
+                y( step );
+            } );
+        } )
+    };
+};
+
+var plotDevelopments = [];
+function addPlotDevelopment( plotDevelopment ) {
+    plotDevelopments.push( plotDevelopment );
+}
 
 addPlotDevelopment( function ( plot ) {
     // Add a beat to any step.
@@ -83,8 +257,9 @@ addPlotDevelopment( function ( plot ) {
     var resource = gensym();
     var foreshadow = { type: "foreshadow", name: gensym(), resource: resource, bookend: null };
     var lampshade = { type: "lampshade", name: gensym(), resource: resource, bookend: null };
-    return plot.plusNode( node ).minusStep( step ).plusSteps(
-        step.start, foreshadow.name, lampshade.name, step.stop );
+    return plot.plusNode( foreshadow, lampshade ).minusStep( step ).
+        plusSteps(
+            step.start, foreshadow.name, lampshade.name, step.stop );
 } );
 addPlotDevelopment( function ( plot ) {
     // Add a non-consuming use to any foreshadowing.
@@ -111,7 +286,7 @@ addPlotDevelopment( function ( plot ) {
         || movingNode.type === "startChoice") )
         return plot;
     var newPlot = plot;
-    newPlot.eachStep( function ( name, intoStep ) {
+    newPlot.eachStep( function ( intoStep ) {
         if ( intoStep.stop !== movingNode.name )
             return;
         var otherNode = plot.getNode( intoStep.start );
@@ -128,14 +303,14 @@ addPlotDevelopment( function ( plot ) {
             // * - m - o - *
             //       `---- *
             
-            newPlot = newPlot.minusStep( step, intoStep ).plusSteps(
-                movingNode.name, otherNode.name, step.stop );
-            newPlot.eachStep( function ( name, prevStep ) {
+            newPlot.eachStep( function ( prevStep ) {
                 if ( prevStep.stop !== otherNode.name )
                     return;
                 newPlot = newPlot.minusStep( prevStep ).
-                    plusSteps( prevStep.start, movingStep.name );
+                    plusSteps( prevStep.start, movingNode.name );
             } );
+            newPlot = newPlot.minusStep( step, intoStep ).plusSteps(
+                movingNode.name, otherNode.name, step.stop );
             
         } else if (
             otherNode.type === "startConcurrency"
@@ -262,23 +437,23 @@ addPlotDevelopment( function ( plot ) {
         && otherNode.resource === foreshadowing.resource ) {
         
         var newPlot = plot.minusStep( step );
-        newPlot.eachStep( function ( name, prevStep ) {
+        newPlot.eachStep( function ( prevStep ) {
             if ( prevStep.stop !== step.start )
                 return;
-            newPlot.eachStep( function ( name, nextStep ) {
+            newPlot.eachStep( function ( nextStep ) {
                 if ( nextStep.start !== step.stop )
                     return;
                 newPlot = newPlot.plusSteps(
                     prevStep.start, nextStep.stop );
             } );
         } );
-        newPlot.eachStep( function ( name, otherStep ) {
+        newPlot.eachStep( function ( otherStep ) {
             if ( !(otherStep.stop === step.start
                 || otherStep.start === step.stop) )
                 return;
             newPlot = newPlot.minusStep( step );
         } );
-        return newPlot.minusNode( step.start, step.stop );
+        return newPlot.minusNodeName( step.start, step.stop );
     }
     
     if ( otherNode.type === "doNothing"
@@ -290,9 +465,9 @@ addPlotDevelopment( function ( plot ) {
         || otherNode.type === "startChoice"
         || otherNode.type === "stopChoice" ) {
         
-        var newPlot =
-            plot.minusNode( foreshadowing.name ).minusStep( step );
-        newPlot.eachStep( function ( name, nextStep ) {
+        var newPlot = plot.minusNodeName( foreshadowing.name ).
+            minusStep( step );
+        newPlot.eachStep( function ( nextStep ) {
             if ( nextStep.start !== otherNode.name )
                 return;
             if ( stepsEq( step, nextStep ) )
@@ -303,13 +478,13 @@ addPlotDevelopment( function ( plot ) {
                 plusSteps(
                     nextStep.start, lampshading.name, nextStep.stop );
         } );
-        newPlot.each( function ( name, nextStep ) {
+        newPlot.eachStep( function ( nextStep ) {
             if ( nextStep.start !== foreshadowing.name )
                 return;
             newPlot = newPlot.minusStep( nextStep ).
                 plusSteps( otherNode.name, nextStep.stop );
         } );
-        newPlot.each( function ( name, prevStep ) {
+        newPlot.eachStep( function ( prevStep ) {
             if ( prevStep.stop !== otherNode.name )
                 return;
             var newForeshadowing = { type: "foreshadow", name: gensym(), resource: foreshadowing.resource, bookend: foreshadowing.bookend };
@@ -350,23 +525,23 @@ addPlotDevelopment( function ( plot ) {
         && otherNode.resource === lampshading.resource ) {
         
         var newPlot = plot.minusStep( step );
-        newPlot.eachStep( function ( name, prevStep ) {
+        newPlot.eachStep( function ( prevStep ) {
             if ( prevStep.stop !== step.start )
                 return;
-            newPlot.eachStep( function ( name, nextStep ) {
+            newPlot.eachStep( function ( nextStep ) {
                 if ( nextStep.start !== step.stop )
                     return;
                 newPlot = newPlot.plusSteps(
                     prevStep.start, nextStep.stop );
             } );
         } );
-        newPlot.eachStep( function ( name, otherStep ) {
+        newPlot.eachStep( function ( otherStep ) {
             if ( !(otherStep.stop === step.start
                 || otherStep.start === step.stop) )
                 return;
             newPlot = newPlot.minusStep( step );
         } );
-        return newPlot.minusNode( step.start, step.stop );
+        return newPlot.minusNodeName( step.start, step.stop );
     }
     
     if ( otherNode.type === "doNothing"
@@ -379,8 +554,8 @@ addPlotDevelopment( function ( plot ) {
         || otherNode.type === "stopChoice" ) {
         
         var newPlot =
-            plot.minusNode( lampshading.name ).minusStep( step );
-        newPlot.eachStep( function ( name, prevStep ) {
+            plot.minusNodeName( lampshading.name ).minusStep( step );
+        newPlot.eachStep( function ( prevStep ) {
             if ( prevStep.stop !== otherNode.name )
                 return;
             if ( stepsEq( step, prevStep ) )
@@ -391,17 +566,17 @@ addPlotDevelopment( function ( plot ) {
                 plusSteps( prevStep.start, foreshadowing.name,
                     prevStep.stop );
         } );
-        newPlot.eachStep( function ( name, prevStep ) {
+        newPlot.eachStep( function ( prevStep ) {
             if ( prevStep.stop !== lampshading.name )
                 return;
             newPlot = newPlot.minusStep( prevStep ).
                 plusSteps( prevStep.start, otherNode.name );
         } );
-        newPlot.eachStep( function ( name, nextStep ) {
-            if ( nextStep.stop !== otherNode.name )
+        newPlot.eachStep( function ( nextStep ) {
+            if ( nextStep.start !== otherNode.name )
                 return;
             var newLampshading = { type: "lampshade", name: gensym(), resource: lampshading.resource, bookend: lampshading.bookend };
-            newPlot = newPlot.plusStep( newLampshading ).
+            newPlot = newPlot.plusNode( newLampshading ).
                 minusStep( nextStep ).
                 plusSteps( nextStep.start, newLampshading.name,
                     nextStep.stop );
@@ -437,12 +612,70 @@ addPlotDevelopment( function ( plot ) {
     if ( foreshadowing.type !== "foreshadow" )
         return plot;
     
-    return plot.minusNode( step.start, step.stop ).
-        plusNode( { type: "foreshadow", name: step.start, resource: foreshadowing.resource, bookend: { val: lampshading.resource } } ).
-        plusNode( { type: "lampshade", name: step.stop, resource: lampshading.resource, bookend: { val: foreshadowing.resource } } );
+    return plot.minusNodeName( step.start, step.stop ).
+        plusNode( { type: "lampshade", name: step.start, resource: lampshading.resource, bookend: { val: foreshadowing.resource } } ).
+        plusNode( { type: "foreshadow", name: step.stop, resource: foreshadowing.resource, bookend: { val: lampshading.resource } } );
 } );
 
 // TODO:
 /*
 When a sufficient number of character uses have been assigned on every branch, the generation is complete.
 */
+
+function randomlyPickPlot() {
+    
+    //        ,------- * ----- *
+    //       /       /
+    // * - * - * - * - * ----- *
+    //           \       \
+    //            `------- * - *
+    
+    var stopChoice1 = { type: "stopChoice", name: gensym() };
+    var stopStory1 = { type: "stopStory", name: gensym() };
+    
+    var startStory = { type: "startStory", name: gensym() };
+    var startChoice1 = { type: "startChoice", name: gensym() };
+    var startChoice2 = { type: "startChoice", name: gensym() };
+    var startChoice3 = { type: "startChoice", name: gensym() };
+    var startChoice4 = { type: "startChoice", name: gensym() };
+    var stopStory2 = { type: "stopStory", name: gensym() };
+    
+    var stopChoice3 = { type: "stopChoice", name: gensym() };
+    var stopStory3 = { type: "stopStory", name: gensym() };
+    
+    var plot = makePlot().plusNode(
+        stopChoice1,
+        stopStory1,
+        
+        startStory,
+        startChoice1,
+        startChoice2,
+        startChoice3,
+        startChoice4,
+        stopStory2,
+        
+        stopChoice3,
+        stopStory3
+    ).
+        plusSteps(
+            startStory.name, startChoice1.name, startChoice2.name,
+            startChoice3.name, startChoice4.name, stopStory2.name ).
+        plusSteps(
+            startChoice1.name, stopChoice1.name, stopStory1.name ).
+        plusSteps(
+            startChoice2.name, stopChoice3.name, stopStory3.name ).
+        plusSteps( startChoice3.name, stopChoice1.name ).
+        plusSteps( startChoice4.name, stopChoice3.name );
+    
+    
+    // TODO: Use the termination condition described in the TODO
+    // above. At least don't hardcode 50 iterations here.
+    _.repeat( 50, function () {
+        var plotDevelopment =
+            randomlyPickElement( plotDevelopments ).val;
+        plot = plotDevelopment( plot );
+    } );
+    
+    
+    return plot;
+}

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+episodic-adventure-generator.html
+Copyright 2016 Ross Angle. Released under the MIT License.
+-->
+<title>Monday Comics episodic adventure generator</title>
+<style type="text/css">
+#result-dot,
+#result-json {
+    width: 400px;
+    height: 300px;
+}
+</style>
+</head>
+<body>
+
+<p>Each time this page is loaded, a new story skeleton is made. The
+  two text boxes and the image below are visualizations of this story
+  skeleton.</p>
+
+<p><button id="go">Generate again</button></p>
+
+<p><textarea id="result-dot"></textarea
+    ><textarea id="result-json"></textarea></p>
+
+<p id="result-graphic"></p>
+
+<script type="text/javascript" src="lib/viz.js"></script>
+<script type="text/javascript" src="lib/lathe.js"></script>
+<script type="text/javascript">"use strict";
+var _ = rocketnia.lathe;
+</script>
+<script type="text/javascript" src="monday-comics.js"></script>
+<script type="text/javascript" src="episodic-adventure-generator.js">
+    </script>
+<script type="text/javascript">"use strict";
+
+window.onload = function () {
+    function generate() {
+        var plot = randomlyPickPlot();
+        var dot = "" + plot.toDotGraphNotation();
+        _.dom( _.el( "result-dot" ), dot );
+        _.dom( _.el( "result-json" ),
+            JSON.stringify( plot.toJson() ) );
+        _.dom( _.el( "result-graphic" ),
+            Viz( dot, { format: "png-image-element" } ) );
+    }
+    _.appendDom( _.el( "go" ), { click: function () {
+        generate();
+    } } );
+    generate();
+};
+
+</script>
+</body>
+</html>
