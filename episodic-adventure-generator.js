@@ -222,7 +222,7 @@ addPlotDevelopment( 1, function ( plot ) {
     
     var step = plot.randomlyPickStep();
     if ( step === null )
-        return plot;
+        return null;
     var node = { type: "doNothing", name: gensym() };
     return plot.plusNode( node ).
         replaceStep( step, step.start, node.name, step.stop );
@@ -232,7 +232,7 @@ addPlotDevelopment( 2, function ( plot ) {
     
     var step = plot.randomlyPickStep();
     if ( step === null )
-        return plot;
+        return null;
     var start = { type: "startChoice", name: gensym() };
     var stop = { type: "stopChoice", name: gensym() };
     var w = step.weight / 6;
@@ -247,7 +247,7 @@ addPlotDevelopment( 2, function ( plot ) {
     
     var step = plot.randomlyPickStep();
     if ( step === null )
-        return plot;
+        return null;
     var start = { type: "startConcurrency", name: gensym() };
     var stop = { type: "stopConcurrency", name: gensym() };
     var w = step.weight / 6;
@@ -257,12 +257,12 @@ addPlotDevelopment( 2, function ( plot ) {
         plusSteps( w * 2, start.name, stop.name ).
         plusSteps( w, stop.name, step.stop );
 } );
-addPlotDevelopment( 2, function ( plot ) {
+addPlotDevelopment( 3, function ( plot ) {
     // Add a fresh puzzle dependency to any step by foreshadowing it and lampshading it all at once.
     
     var step = plot.randomlyPickStep();
     if ( step === null )
-        return plot;
+        return null;
     var resource = gensym();
     var foreshadow = { type: "foreshadow", name: gensym(), resource: resource, bookend: null };
     var lampshade = { type: "lampshade", name: gensym(), resource: resource, bookend: null };
@@ -274,25 +274,25 @@ addPlotDevelopment( 3, function ( plot ) {
     
     var step = plot.randomlyPickStep();
     if ( step === null )
-        return plot;
+        return null;
     var foreshadowing = plot.getNode( step.start );
     if ( foreshadowing.type !== "foreshadow" )
-        return plot;
+        return null;
     
     var node = { type: "use", name: gensym(), resource: foreshadowing.resource };
     return plot.plusNode( node ).
         replaceStep( step, step.start, node.name, step.stop );
 } );
-addPlotDevelopment( 5, function ( plot ) {
+addPlotDevelopment( 10, function ( plot ) {
     // Migrate all but one branch of a branching node earlier in time.
     
     var step = plot.randomlyPickStep();
     if ( step === null )
-        return plot;
+        return null;
     var movingNode = plot.getNode( step.start );
     if ( !(movingNode.type === "startConcurrency"
         || movingNode.type === "startChoice") )
-        return plot;
+        return null;
     var newPlot = plot;
     newPlot.eachStep( function ( intoStep ) {
         if ( intoStep.stop !== movingNode.name )
@@ -424,15 +424,15 @@ addPlotDevelopment( 5, function ( plot ) {
 * Migrate all but one branch of a rejoining node later in time.
 */
 
-addPlotDevelopment( 5, function ( plot ) {
+addPlotDevelopment( 10, function ( plot ) {
     // Migrate a foreshadowing earlier in time, as long as it doesn't go earlier than its bookend (if any). If it crosses a branching node, add a corresponding lampshading on the other branch. If it encounters a lampshading of the same resource, merge the region by removing both the lampshading and the foreshadowing.
     
     var step = plot.randomlyPickStep();
     if ( step === null )
-        return plot;
+        return null;
     var foreshadowing = plot.getNode( step.stop );
     if ( foreshadowing.type !== "foreshadow" )
-        return plot;
+        return null;
     var otherNode = plot.getNode( step.start );
     
     if ( (otherNode.type === "foreshadow"
@@ -441,7 +441,7 @@ addPlotDevelopment( 5, function ( plot ) {
                 && otherNode.bookend.val === foreshadowing.resource)
             || (foreshadowing.bookend !== null
                 && foreshadowing.bookend.val === otherNode.resource)) )
-        return plot;
+        return null;
     
     if ( otherNode.type === "lampshade"
         && otherNode.resource === foreshadowing.resource ) {
@@ -525,22 +525,22 @@ addPlotDevelopment( 5, function ( plot ) {
         } );
         return newPlot;
     } else if ( otherNode.type === "startStory" ) {
-        return plot;
+        return null;
     } else if ( otherNode.type === "stopStory" ) {
         throw new Error();
     } else {
         throw new Error();
     }
 } );
-addPlotDevelopment( 5, function ( plot ) {
+addPlotDevelopment( 10, function ( plot ) {
     // Migrate a lampshading later in time, as long as it doesn't go later than its bookend (if any). If it crosses a rejoining node, add a corresponding foreshadowing on the other branch. If it encounters a foreshadowing of the same resource, merge the region by removing both the lampshading and the foreshadowing.
     
     var step = plot.randomlyPickStep();
     if ( step === null )
-        return plot;
+        return null;
     var lampshading = plot.getNode( step.start );
     if ( lampshading.type !== "lampshade" )
-        return plot;
+        return null;
     var otherNode = plot.getNode( step.stop );
     
     if ( (otherNode.type === "lampshade"
@@ -549,7 +549,7 @@ addPlotDevelopment( 5, function ( plot ) {
                 && otherNode.bookend.val === lampshading.resource)
             || (lampshading.bookend !== null
                 && lampshading.bookend.val === otherNode.resource)) )
-        return plot;
+        return null;
     
     if ( otherNode.type === "foreshadow"
         && otherNode.resource === lampshading.resource ) {
@@ -633,7 +633,7 @@ addPlotDevelopment( 5, function ( plot ) {
         } );
         return newPlot;
     } else if ( otherNode.type === "stopStory" ) {
-        return plot;
+        return null;
     } else if ( otherNode.type === "startStory" ) {
         throw new Error();
     } else {
@@ -654,13 +654,13 @@ addPlotDevelopment( 3, function ( plot ) {
     
     var step = plot.randomlyPickStep();
     if ( step === null )
-        return plot;
+        return null;
     var lampshading = plot.getNode( step.start );
     if ( lampshading.type !== "lampshade" )
-        return plot;
+        return null;
     var foreshadowing = plot.getNode( step.stop );
     if ( foreshadowing.type !== "foreshadow" )
-        return plot;
+        return null;
     
     return plot.minusNodeName( step.start, step.stop ).
         plusNode( { type: "lampshade", name: step.start, resource: lampshading.resource, bookend: { val: foreshadowing.resource } } ).
@@ -722,10 +722,13 @@ function randomlyPickPlot() {
     
     // TODO: Use the termination condition described in the TODO
     // above. At least don't hardcode 50 iterations here.
-    _.repeat( 50, function () {
-        var plotDevelopment =
-            randomlyPickWeighted( plotDevelopments );
-        plot = plotDevelopment( plot );
+    _.repeat( 30, function () {
+        do {
+            var plotDevelopment =
+                randomlyPickWeighted( plotDevelopments );
+            var newPlot = plotDevelopment( plot );
+        } while ( newPlot === null );
+        plot = newPlot;
     } );
     
     
