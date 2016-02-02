@@ -1,7 +1,8 @@
 // episodic-adventure-generator.js
 // Copyright 2016 Ross Angle. Released under the MIT License.
 
-// NOTE: This file depends on randomlyPickNat() from monday-comics.js.
+// NOTE: This file depends on randomlyPickNat() and
+// randomlyPickWeighted() from monday-comics.js.
 
 var nextGensymIndex = 1;
 function gensym() {
@@ -16,8 +17,9 @@ function randomlyPickElement( arr ) {
 function pickStep( plot ) {
     return plot.randomlyPickStep();
 }
-function makeStep( start, stop ) {
-    return { type: "step", name: gensym(), start: start, stop: stop };
+function makeStep( weight, start, stop ) {
+    return { type: "step", name: gensym(), weight: weight,
+        start: start, stop: stop };
 }
 function stepsEq( a, b ) {
     return a.name === b.name;
@@ -105,15 +107,22 @@ Plot.prototype.plusStep = function ( step ) {
     steps[ this.toKey_( step.name ) ] = step;
     return new Plot().init_( this.nodes_, steps );
 };
-Plot.prototype.plusSteps = function ( var_args ) {
-    var n = arguments.length;
-    var stepNames = arguments;
+Plot.prototype.plusSteps = function ( weight, var_args ) {
+    var stepNames = _.arrCut( arguments, 1 );
+    var n = stepNames.length - 1;
+    var eachWeight = weight / n;
     var result = this;
     _.repeat( stepNames.length - 1, function ( i ) {
         result = result.plusStep(
-            makeStep( stepNames[ i ], stepNames[ i + 1 ] ) );
+            makeStep( eachWeight,
+                stepNames[ i ], stepNames[ i + 1 ] ) );
     } );
     return result;
+};
+Plot.prototype.replaceStep = function ( step, var_args ) {
+    var without = this.minusStep( step );
+    return without.plusSteps.apply( without,
+        [ step.weight ].concat( _.arrCut( arguments, 1 ) ) );
 };
 Plot.prototype.getNode = function ( nodeName ) {
     return this.nodes_[ this.toKey_( nodeName ) ];
@@ -125,12 +134,14 @@ Plot.prototype.eachStep = function ( body ) {
 };
 Plot.prototype.randomlyPickStep = function () {
     var self = this;
-    var maybeResult = randomlyPickElement( _.acc( function ( y ) {
+    var weightedSteps = _.acc( function ( y ) {
         self.eachStep( function ( step ) {
-            y( step );
+            y( { weight: step.weight, val: step } );
         } );
-    } ) );
-    return maybeResult === null ? null : maybeResult.val;
+    } );
+    if ( weightedSteps.length === 0 )
+        return null;
+    return randomlyPickWeighted( weightedSteps );
 };
 Plot.prototype.toDotGraphNotation = function () {
     var self = this;
@@ -221,8 +232,8 @@ addPlotDevelopment( function ( plot ) {
     if ( step === null )
         return plot;
     var node = { type: "doNothing", name: gensym() };
-    return plot.plusNode( node ).minusStep( step ).
-        plusSteps( step.start, node.name, step.stop );
+    return plot.plusNode( node ).
+        replaceStep( step, step.start, node.name, step.stop );
 } );
 addPlotDevelopment( function ( plot ) {
     // Turn any step into a converging choice of two possible steps.
@@ -232,9 +243,10 @@ addPlotDevelopment( function ( plot ) {
         return plot;
     var start = { type: "startChoice", name: gensym() };
     var stop = { type: "stopChoice", name: gensym() };
+    var w = step.weight / 4;
     return plot.plusNode( start, stop ).minusStep( step ).
-        plusSteps( step.start, start.name, stop.name, step.stop ).
-        plusSteps( start.name, stop.name );
+        plusSteps( w, step.start, start.name, stop.name, step.stop ).
+        plusSteps( w, start.name, stop.name );
 } );
 addPlotDevelopment( function ( plot ) {
     // Turn any step into a converging concurrency of two steps.
@@ -244,9 +256,10 @@ addPlotDevelopment( function ( plot ) {
         return plot;
     var start = { type: "startConcurrency", name: gensym() };
     var stop = { type: "stopConcurrency", name: gensym() };
+    var w = step.weight / 4;
     return plot.plusNode( start, stop ).minusStep( step ).
-        plusSteps( step.start, start.name, stop.name, step.stop ).
-        plusSteps( start.name, stop.name );
+        plusSteps( w, step.start, start.name, stop.name, step.stop ).
+        plusSteps( w, start.name, stop.name );
 } );
 addPlotDevelopment( function ( plot ) {
     // Add a fresh puzzle dependency to any step by foreshadowing it and lampshading it all at once.
@@ -257,9 +270,8 @@ addPlotDevelopment( function ( plot ) {
     var resource = gensym();
     var foreshadow = { type: "foreshadow", name: gensym(), resource: resource, bookend: null };
     var lampshade = { type: "lampshade", name: gensym(), resource: resource, bookend: null };
-    return plot.plusNode( foreshadow, lampshade ).minusStep( step ).
-        plusSteps(
-            step.start, foreshadow.name, lampshade.name, step.stop );
+    return plot.plusNode( foreshadow, lampshade ).replaceStep( step,
+        step.start, foreshadow.name, lampshade.name, step.stop );
 } );
 addPlotDevelopment( function ( plot ) {
     // Add a non-consuming use to any foreshadowing.
@@ -272,8 +284,8 @@ addPlotDevelopment( function ( plot ) {
         return plot;
     
     var node = { type: "use", name: gensym(), resource: foreshadowing.resource };
-    return plot.plusNode( node ).minusStep( step ).
-        plusSteps( step.start, node.name, step.stop );
+    return plot.plusNode( node ).
+        replaceStep( step, step.start, node.name, step.stop );
 } );
 addPlotDevelopment( function ( plot ) {
     // Migrate all but one branch of a branching node earlier in time.
@@ -306,12 +318,13 @@ addPlotDevelopment( function ( plot ) {
             newPlot.eachStep( function ( prevStep ) {
                 if ( prevStep.stop !== otherNode.name )
                     return;
-                newPlot = newPlot.minusStep( prevStep ).
-                    plusSteps( prevStep.start, movingNode.name );
+                newPlot = newPlot.replaceStep( prevStep,
+                    prevStep.start, movingNode.name );
             } );
-            newPlot = newPlot.minusStep( step, intoStep ).
-                plusSteps( step.weight
-                movingNode.name, otherNode.name, step.stop );
+            newPlot = newPlot.
+                replaceStep( step, otherNode.name, step.stop ).
+                replaceStep( intoStep,
+                    movingNode.name, otherNode.name );
             
         } else if (
             otherNode.type === "startConcurrency"
@@ -438,13 +451,31 @@ addPlotDevelopment( function ( plot ) {
         && otherNode.resource === foreshadowing.resource ) {
         
         var newPlot = plot.minusStep( step );
+        var spanCount = 0;
+        var spanWeight = step.weight;
         newPlot.eachStep( function ( prevStep ) {
             if ( prevStep.stop !== step.start )
                 return;
             newPlot.eachStep( function ( nextStep ) {
                 if ( nextStep.start !== step.stop )
                     return;
-                newPlot = newPlot.plusSteps(
+                spanCount++;
+            } );
+        } );
+        newPlot.eachStep( function ( otherStep ) {
+            if ( !(otherStep.stop === step.start
+                || otherStep.start === step.stop) )
+                return;
+            spanWeight += otherStep.weight;
+            newPlot = newPlot.minusStep( step );
+        } );
+        newPlot.eachStep( function ( prevStep ) {
+            if ( prevStep.stop !== step.start )
+                return;
+            newPlot.eachStep( function ( nextStep ) {
+                if ( nextStep.start !== step.stop )
+                    return;
+                newPlot = newPlot.plusSteps( spanWeight / stepCount,
                     prevStep.start, nextStep.stop );
             } );
         } );
@@ -475,23 +506,25 @@ addPlotDevelopment( function ( plot ) {
                 return;
             var lampshading = { type: "lampshade", name: gensym(), resource: foreshadowing.resource, bookend: null };
             newPlot = newPlot.plusNode( lampshading ).
-                minusStep( nextStep ).
-                plusSteps(
-                    nextStep.start, lampshading.name, nextStep.stop );
+                replaceStep( nextStep,
+                    nextStep.start,
+                    lampshading.name,
+                    nextStep.stop );
         } );
         newPlot.eachStep( function ( nextStep ) {
             if ( nextStep.start !== foreshadowing.name )
                 return;
-            newPlot = newPlot.minusStep( nextStep ).
-                plusSteps( otherNode.name, nextStep.stop );
+            newPlot = newPlot.replaceStep( nextStep,
+                otherNode.name, nextStep.stop );
         } );
         newPlot.eachStep( function ( prevStep ) {
             if ( prevStep.stop !== otherNode.name )
                 return;
             var newForeshadowing = { type: "foreshadow", name: gensym(), resource: foreshadowing.resource, bookend: foreshadowing.bookend };
             newPlot = newPlot.plusNode( newForeshadowing ).
-                minusStep( prevStep ).
-                plusSteps( prevStep.start, newForeshadowing.name,
+                replaceStep( prevStep,
+                    prevStep.start,
+                    newForeshadowing.name,
                     prevStep.stop );
         } );
         return newPlot;
@@ -550,7 +583,7 @@ addPlotDevelopment( function ( plot ) {
             newPlot.eachStep( function ( nextStep ) {
                 if ( nextStep.start !== step.stop )
                     return;
-                newPlot = newPlot.plusSteps( stepWeight / stepCount,
+                newPlot = newPlot.plusSteps( spanWeight / stepCount,
                     prevStep.start, nextStep.stop );
             } );
         } );
@@ -581,23 +614,25 @@ addPlotDevelopment( function ( plot ) {
                 return;
             var foreshadowing = { type: "foreshadow", name: gensym(), resource: lampshading.resource, bookend: null };
             newPlot = newPlot.plusNode( foreshadowing ).
-                minusStep( prevStep ).
-                plusSteps( prevStep.weight / 2, prevStep.start, foreshadowing.name,
+                replaceStep( prevStep,
+                    prevStep.start,
+                    foreshadowing.name,
                     prevStep.stop );
         } );
         newPlot.eachStep( function ( prevStep ) {
             if ( prevStep.stop !== lampshading.name )
                 return;
-            newPlot = newPlot.minusStep( prevStep ).
-                plusSteps( prevStep.weight, prevStep.start, otherNode.name );
+            newPlot = newPlot.replaceStep( prevStep,
+                prevStep.start, otherNode.name );
         } );
         newPlot.eachStep( function ( nextStep ) {
             if ( nextStep.start !== otherNode.name )
                 return;
             var newLampshading = { type: "lampshade", name: gensym(), resource: lampshading.resource, bookend: lampshading.bookend };
             newPlot = newPlot.plusNode( newLampshading ).
-                minusStep( nextStep ).
-                plusSteps( nextStep.weight / 2, nextStep.start, newLampshading.name,
+                replaceStep( nextStep,
+                    nextStep.start,
+                    newLampshading.name,
                     nextStep.stop );
         } );
         return newPlot;
