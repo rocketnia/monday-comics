@@ -1,22 +1,14 @@
 // episodic-adventure-generator.js
 // Copyright 2016 Ross Angle. Released under the MIT License.
 
-// NOTE: This file depends on randomlyPickNat() and
-// randomlyPickWeighted() from monday-comics.js.
+// NOTE: This file depends on randomlyPickWeighted() from
+// monday-comics.js.
 
 var nextGensymIndex = 1;
 function gensym() {
     return "gs" + (nextGensymIndex++);
 }
 
-function randomlyPickElement( arr ) {
-    var n = arr.length;
-    return n === 0 ? null : { val: arr[ randomlyPickNat( n ) ] };
-}
-
-function pickStep( plot ) {
-    return plot.randomlyPickStep();
-}
 function makeStep( weight, start, stop ) {
     return { type: "step", name: gensym(), weight: weight,
         start: start, stop: stop };
@@ -221,50 +213,54 @@ Plot.prototype.toJson = function () {
 };
 
 var plotDevelopments = [];
-function addPlotDevelopment( plotDevelopment ) {
-    plotDevelopments.push( plotDevelopment );
+function addPlotDevelopment( weight, plotDevelopment ) {
+    plotDevelopments.push( { weight: weight, val: plotDevelopment } );
 }
 
-addPlotDevelopment( function ( plot ) {
+addPlotDevelopment( 1, function ( plot ) {
     // Add a beat to any step.
     
-    var step = pickStep( plot );
+    var step = plot.randomlyPickStep();
     if ( step === null )
         return plot;
     var node = { type: "doNothing", name: gensym() };
     return plot.plusNode( node ).
         replaceStep( step, step.start, node.name, step.stop );
 } );
-addPlotDevelopment( function ( plot ) {
+addPlotDevelopment( 2, function ( plot ) {
     // Turn any step into a converging choice of two possible steps.
     
-    var step = pickStep( plot );
+    var step = plot.randomlyPickStep();
     if ( step === null )
         return plot;
     var start = { type: "startChoice", name: gensym() };
     var stop = { type: "stopChoice", name: gensym() };
-    var w = step.weight / 4;
+    var w = step.weight / 6;
     return plot.plusNode( start, stop ).minusStep( step ).
-        plusSteps( w, step.start, start.name, stop.name, step.stop ).
-        plusSteps( w, start.name, stop.name );
+        plusSteps( w, step.start, start.name ).
+        plusSteps( w * 2, start.name, stop.name ).
+        plusSteps( w * 2, start.name, stop.name ).
+        plusSteps( w, stop.name, step.stop );
 } );
-addPlotDevelopment( function ( plot ) {
+addPlotDevelopment( 2, function ( plot ) {
     // Turn any step into a converging concurrency of two steps.
     
-    var step = pickStep( plot );
+    var step = plot.randomlyPickStep();
     if ( step === null )
         return plot;
     var start = { type: "startConcurrency", name: gensym() };
     var stop = { type: "stopConcurrency", name: gensym() };
-    var w = step.weight / 4;
+    var w = step.weight / 6;
     return plot.plusNode( start, stop ).minusStep( step ).
-        plusSteps( w, step.start, start.name, stop.name, step.stop ).
-        plusSteps( w, start.name, stop.name );
+        plusSteps( w, step.start, start.name ).
+        plusSteps( w * 2, start.name, stop.name ).
+        plusSteps( w * 2, start.name, stop.name ).
+        plusSteps( w, stop.name, step.stop );
 } );
-addPlotDevelopment( function ( plot ) {
+addPlotDevelopment( 2, function ( plot ) {
     // Add a fresh puzzle dependency to any step by foreshadowing it and lampshading it all at once.
     
-    var step = pickStep( plot );
+    var step = plot.randomlyPickStep();
     if ( step === null )
         return plot;
     var resource = gensym();
@@ -273,10 +269,10 @@ addPlotDevelopment( function ( plot ) {
     return plot.plusNode( foreshadow, lampshade ).replaceStep( step,
         step.start, foreshadow.name, lampshade.name, step.stop );
 } );
-addPlotDevelopment( function ( plot ) {
+addPlotDevelopment( 3, function ( plot ) {
     // Add a non-consuming use to any foreshadowing.
     
-    var step = pickStep( plot );
+    var step = plot.randomlyPickStep();
     if ( step === null )
         return plot;
     var foreshadowing = plot.getNode( step.start );
@@ -287,10 +283,10 @@ addPlotDevelopment( function ( plot ) {
     return plot.plusNode( node ).
         replaceStep( step, step.start, node.name, step.stop );
 } );
-addPlotDevelopment( function ( plot ) {
+addPlotDevelopment( 5, function ( plot ) {
     // Migrate all but one branch of a branching node earlier in time.
     
-    var step = pickStep( plot );
+    var step = plot.randomlyPickStep();
     if ( step === null )
         return plot;
     var movingNode = plot.getNode( step.start );
@@ -428,10 +424,10 @@ addPlotDevelopment( function ( plot ) {
 * Migrate all but one branch of a rejoining node later in time.
 */
 
-addPlotDevelopment( function ( plot ) {
+addPlotDevelopment( 5, function ( plot ) {
     // Migrate a foreshadowing earlier in time, as long as it doesn't go earlier than its bookend (if any). If it crosses a branching node, add a corresponding lampshading on the other branch. If it encounters a lampshading of the same resource, merge the region by removing both the lampshading and the foreshadowing.
     
-    var step = pickStep( plot );
+    var step = plot.randomlyPickStep();
     if ( step === null )
         return plot;
     var foreshadowing = plot.getNode( step.stop );
@@ -536,10 +532,10 @@ addPlotDevelopment( function ( plot ) {
         throw new Error();
     }
 } );
-addPlotDevelopment( function ( plot ) {
+addPlotDevelopment( 5, function ( plot ) {
     // Migrate a lampshading later in time, as long as it doesn't go later than its bookend (if any). If it crosses a rejoining node, add a corresponding foreshadowing on the other branch. If it encounters a foreshadowing of the same resource, merge the region by removing both the lampshading and the foreshadowing.
     
-    var step = pickStep( plot );
+    var step = plot.randomlyPickStep();
     if ( step === null )
         return plot;
     var lampshading = plot.getNode( step.start );
@@ -653,10 +649,10 @@ addPlotDevelopment( function ( plot ) {
 * Associate a bookendless foreshadowing or a lampshading with another that is earlier or later, respectively, as long as the outer one connotes a point of interest or a character use. Now the outer one is the bookend of the inner one.
 */
 
-addPlotDevelopment( function ( plot ) {
+addPlotDevelopment( 3, function ( plot ) {
     // Associate a bookendless lampshading with a later bookendless foreshadowing. Now they're bookends of each other.
     
-    var step = pickStep( plot );
+    var step = plot.randomlyPickStep();
     if ( step === null )
         return plot;
     var lampshading = plot.getNode( step.start );
@@ -697,7 +693,7 @@ function randomlyPickPlot() {
     var stopChoice3 = { type: "stopChoice", name: gensym() };
     var stopStory3 = { type: "stopStory", name: gensym() };
     
-    var w = 1 / 11;
+    var w = 1 / 14;
     
     var plot = makePlot().plusNode(
         stopChoice1,
@@ -713,13 +709,13 @@ function randomlyPickPlot() {
         stopChoice3,
         stopStory3
     ).
-        plusSteps( w,
-            startStory.name, startChoice1.name, startChoice2.name,
+        plusSteps( w * 2, startStory.name, startChoice1.name ).
+        plusSteps( w * 4, startChoice1.name, startChoice2.name,
             startChoice3.name, startChoice4.name, stopStory2.name ).
-        plusSteps( w,
-            startChoice1.name, stopChoice1.name, stopStory1.name ).
-        plusSteps( w,
-            startChoice2.name, stopChoice3.name, stopStory3.name ).
+        plusSteps( w * 2, startChoice1.name, stopChoice1.name ).
+        plusSteps( w, stopChoice1.name, stopStory1.name ).
+        plusSteps( w * 2, startChoice2.name, stopChoice3.name ).
+        plusSteps( w, stopChoice3.name, stopStory3.name ).
         plusSteps( w, startChoice3.name, stopChoice1.name ).
         plusSteps( w, startChoice4.name, stopChoice3.name );
     
@@ -728,7 +724,7 @@ function randomlyPickPlot() {
     // above. At least don't hardcode 50 iterations here.
     _.repeat( 50, function () {
         var plotDevelopment =
-            randomlyPickElement( plotDevelopments ).val;
+            randomlyPickWeighted( plotDevelopments );
         plot = plotDevelopment( plot );
     } );
     
