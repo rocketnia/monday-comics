@@ -309,7 +309,8 @@ addPlotDevelopment( function ( plot ) {
                 newPlot = newPlot.minusStep( prevStep ).
                     plusSteps( prevStep.start, movingNode.name );
             } );
-            newPlot = newPlot.minusStep( step, intoStep ).plusSteps(
+            newPlot = newPlot.minusStep( step, intoStep ).
+                plusSteps( step.weight
                 movingNode.name, otherNode.name, step.stop );
             
         } else if (
@@ -525,13 +526,31 @@ addPlotDevelopment( function ( plot ) {
         && otherNode.resource === lampshading.resource ) {
         
         var newPlot = plot.minusStep( step );
+        var spanCount = 0;
+        var spanWeight = step.weight;
         newPlot.eachStep( function ( prevStep ) {
             if ( prevStep.stop !== step.start )
                 return;
             newPlot.eachStep( function ( nextStep ) {
                 if ( nextStep.start !== step.stop )
                     return;
-                newPlot = newPlot.plusSteps(
+                spanCount++;
+            } );
+        } );
+        newPlot.eachStep( function ( otherStep ) {
+            if ( !(otherStep.stop === step.start
+                || otherStep.start === step.stop) )
+                return;
+            spanWeight += otherStep.weight;
+            newPlot = newPlot.minusStep( step );
+        } );
+        newPlot.eachStep( function ( prevStep ) {
+            if ( prevStep.stop !== step.start )
+                return;
+            newPlot.eachStep( function ( nextStep ) {
+                if ( nextStep.start !== step.stop )
+                    return;
+                newPlot = newPlot.plusSteps( stepWeight / stepCount,
                     prevStep.start, nextStep.stop );
             } );
         } );
@@ -563,14 +582,14 @@ addPlotDevelopment( function ( plot ) {
             var foreshadowing = { type: "foreshadow", name: gensym(), resource: lampshading.resource, bookend: null };
             newPlot = newPlot.plusNode( foreshadowing ).
                 minusStep( prevStep ).
-                plusSteps( prevStep.start, foreshadowing.name,
+                plusSteps( prevStep.weight / 2, prevStep.start, foreshadowing.name,
                     prevStep.stop );
         } );
         newPlot.eachStep( function ( prevStep ) {
             if ( prevStep.stop !== lampshading.name )
                 return;
             newPlot = newPlot.minusStep( prevStep ).
-                plusSteps( prevStep.start, otherNode.name );
+                plusSteps( prevStep.weight, prevStep.start, otherNode.name );
         } );
         newPlot.eachStep( function ( nextStep ) {
             if ( nextStep.start !== otherNode.name )
@@ -578,7 +597,7 @@ addPlotDevelopment( function ( plot ) {
             var newLampshading = { type: "lampshade", name: gensym(), resource: lampshading.resource, bookend: lampshading.bookend };
             newPlot = newPlot.plusNode( newLampshading ).
                 minusStep( nextStep ).
-                plusSteps( nextStep.start, newLampshading.name,
+                plusSteps( nextStep.weight / 2, nextStep.start, newLampshading.name,
                     nextStep.stop );
         } );
         return newPlot;
@@ -643,6 +662,8 @@ function randomlyPickPlot() {
     var stopChoice3 = { type: "stopChoice", name: gensym() };
     var stopStory3 = { type: "stopStory", name: gensym() };
     
+    var w = 1 / 11;
+    
     var plot = makePlot().plusNode(
         stopChoice1,
         stopStory1,
@@ -657,15 +678,15 @@ function randomlyPickPlot() {
         stopChoice3,
         stopStory3
     ).
-        plusSteps(
+        plusSteps( w,
             startStory.name, startChoice1.name, startChoice2.name,
             startChoice3.name, startChoice4.name, stopStory2.name ).
-        plusSteps(
+        plusSteps( w,
             startChoice1.name, stopChoice1.name, stopStory1.name ).
-        plusSteps(
+        plusSteps( w,
             startChoice2.name, stopChoice3.name, stopStory3.name ).
-        plusSteps( startChoice3.name, stopChoice1.name ).
-        plusSteps( startChoice4.name, stopChoice3.name );
+        plusSteps( w, startChoice3.name, stopChoice1.name ).
+        plusSteps( w, startChoice4.name, stopChoice3.name );
     
     
     // TODO: Use the termination condition described in the TODO
