@@ -1,8 +1,15 @@
 // episodic-adventure-generator.js
 // Copyright 2016 Ross Angle. Released under the MIT License.
 
-// NOTE: This file depends on randomlyPickWeighted() from
-// monday-comics.js.
+// NOTE: This file depends on randomlyPickDouble(), randomlyPickNat(),
+// and randomlyPickWeighted() from monday-comics.js.
+
+function randomlyDecide( trueProbability ) {
+    return randomlyPickDouble( 1 ) < trueProbability;
+}
+function randomlyPickElement( arr ) {
+    return arr[ randomlyPickNat( arr.length ) ];
+}
 
 var nextGensymIndex = 1;
 function gensym() {
@@ -10,6 +17,8 @@ function gensym() {
 }
 
 function makeStep( weight, start, stop ) {
+    if ( !_.isNumber( weight ) )
+        throw new Error();
     return { type: "step", name: gensym(), weight: weight,
         start: start, stop: stop };
 }
@@ -33,13 +42,14 @@ function labelPlotNode( node ) {
     } else if ( node.type === "use" ) {
         return "Use " + JSON.stringify( node.resource );
     } else if ( node.type === "startConcurrency" ) {
-        return "Start concurrency";
+        return "Fork";
     } else if ( node.type === "stopConcurrency" ) {
-        return "Stop concurrency";
+        return "Join";
     } else if ( node.type === "startChoice" ) {
-        return "Start choice";
+        return (node.choiceMadeHere ? "Make " : "Sync on ") +
+            "choice " + JSON.stringify( node.choice );
     } else if ( node.type === "stopChoice" ) {
-        return "Stop choice";
+        return "Discard choice " + JSON.stringify( node.choice );
     } else if ( node.type === "startStory" ) {
         return "Start story";
     } else if ( node.type === "stopStory" ) {
@@ -88,6 +98,8 @@ Plot.prototype.plusNode = function ( var_args ) {
     var nodes = _.arrFoldl( self.nodes_, arguments,
         function ( nodes, node, i ) {
         
+        if ( node.type === "stopChoice" && node.choice === void 0 )
+            throw new Error();
         var newNodes = _.objCopy( nodes );
         newNodes[ self.toKey_( node.name ) ] = node;
         return newNodes;
@@ -95,6 +107,8 @@ Plot.prototype.plusNode = function ( var_args ) {
     return new Plot().init_( nodes, self.steps_ );
 };
 Plot.prototype.plusStep = function ( step ) {
+    if ( !_.likeObjectLiteral( step ) )
+        throw new Error();
     var steps = _.objCopy( this.steps_ );
     steps[ this.toKey_( step.name ) ] = step;
     return new Plot().init_( this.nodes_, steps );
@@ -128,12 +142,15 @@ Plot.prototype.randomlyPickStep = function () {
     var self = this;
     var weightedSteps = _.acc( function ( y ) {
         self.eachStep( function ( step ) {
+            if ( !_.isNumber( step.weight ) )
+                throw new Error();
             y( { weight: step.weight, val: step } );
         } );
     } );
     if ( weightedSteps.length === 0 )
         return null;
-    return randomlyPickWeighted( weightedSteps );
+    var result = randomlyPickWeighted( weightedSteps );
+    return result;
 };
 Plot.prototype.toDotGraphNotation = function () {
     var self = this;
@@ -233,8 +250,12 @@ addPlotDevelopment( 2, function ( plot ) {
     var step = plot.randomlyPickStep();
     if ( step === null )
         return null;
-    var start = { type: "startChoice", name: gensym() };
-    var stop = { type: "stopChoice", name: gensym() };
+    var choiceName = gensym();
+    var start =
+        { type: "startChoice", name: gensym(), choice: choiceName,
+            choiceMadeHere: true };
+    var stop =
+        { type: "stopChoice", name: gensym(), choice: choiceName };
     var w = step.weight / 6;
     return plot.plusNode( start, stop ).minusStep( step ).
         plusSteps( w, step.start, start.name ).
@@ -294,23 +315,14 @@ addPlotDevelopment( 10, function ( plot ) {
         || movingNode.type === "startChoice") )
         return null;
     var newPlot = plot;
+    var newPlotChanged = false;
     newPlot.eachStep( function ( intoStep ) {
         if ( intoStep.stop !== movingNode.name )
             return;
         var otherNode = plot.getNode( intoStep.start );
         
-        if ( otherNode.type === "doNothing"
-            || otherNode.type === "use" ) {
-            
-            // TODO: This is the only asymmetrical case so far. See if
-            // we should make it symmetrical too.
-            
-            // * - o - m - *
-            //           ` *
-            // ->
-            // * - m - o - *
-            //       `---- *
-            
+        function switchWhileRetainingOtherChildren( intoWeight ) {
+            newPlotChanged = true;
             newPlot.eachStep( function ( prevStep ) {
                 if ( prevStep.stop !== otherNode.name )
                     return;
@@ -319,19 +331,94 @@ addPlotDevelopment( 10, function ( plot ) {
             } );
             newPlot = newPlot.
                 replaceStep( step, otherNode.name, step.stop ).
-                replaceStep( intoStep,
+                minusStep( intoStep ).
+                plusSteps( intoWeight,
                     movingNode.name, otherNode.name );
+        }
+        
+        function branchFamily( node ) {
+            if ( node.type === "startConcurrency"
+                || node.type === "stopConcurrency" )
+                return "concurrency";
+            else if ( node.type === "startChoice"
+                || node.type === "stopChoice" )
+                return "choice";
+            else
+                throw new Error();
+        }
+        
+        function duplicateNode( node ) {
+            if ( node.type === "startConcurrency" )
+                return { type: "startConcurrency", name: gensym() };
+            else if ( node.type === "startChoice" )
+                return { type: "startChoice", name: gensym(),
+                    choice: node.choice,
+                    choiceMadeHere: node.choiceMadeHere };
+            else if ( node.type === "stopConcurrency" )
+                return { type: "stopConcurrency", name: gensym() };
+            else if ( node.type === "stopChoice" )
+                return { type: "stopChoice", name: gensym(),
+                    choice: node.choice };
+            else
+                throw new Error();
+        }
+        
+        if ( otherNode.type === "doNothing"
+            || otherNode.type === "use" ) {
             
+            // * - o - m - *
+            //           ` *
+            // ->
+            // * - m - o - *
+            //       `---- *
+            
+            switchWhileRetainingOtherChildren( intoStep.weight );
         } else if (
             otherNode.type === "startConcurrency"
             || otherNode.type === "stopConcurrency"
             || otherNode.type === "startChoice"
             || otherNode.type === "stopChoice" ) {
             
+            // TODO: Fully unify the two branches of this `if`.
+            //
+            // TODO: Remove the branchFamily(...)===branchFamily(...)
+            // branches, and instead add another rule to transform
+            // like so, when the branch families are equal:
+            // * ----- m - *
+            //       /
+            // * - o ----- *
+            // ->
+            // * - *
+            // * - *
+            // ...Er, actually, that would removing the last
+            // `choiceMadeHere` startChoice. Maybe that's a bad idea.
+            //
             if ( otherNode.type === "startConcurrency"
                 || otherNode.type === "startChoice" ) {
                 
-                if ( movingNode.type === otherNode.type ) {
+                // We explicitly avoid making changes that could cause
+                // a `choiceMadeHere` node to gain more or less
+                // coverage over the playthroughs. We do this just
+                // because a playthrough with more or fewer than one
+                // `choiceMadeHere` node would be confusing for the
+                // author.
+                //
+                // TODO: See if there's a way we can show the author
+                // which choices should lead to which branches. That
+                // would make these cases less confusing, and we might
+                // not need to disallow them anymore.
+                //
+                if ( movingNode.type === "startChoice"
+                    && movingNode.choiceMadeHere )
+                    return;
+                if ( otherNode.type === "startChoice"
+                    && otherNode.choiceMadeHere )
+                    return;
+                
+                if ( branchFamily( movingNode ) ===
+                        branchFamily( otherNode )
+                    && randomlyDecide( 2 / 3 ) ) {
+                    
                     // * - o - m - *a
                     //      \    ` *b
                     //       `---- *c
@@ -340,7 +427,8 @@ addPlotDevelopment( 10, function ( plot ) {
                     //      \    ` *c
                     //       `---- *b
                     
-                    // TODO
+                    switchWhileRetainingOtherChildren(
+                        intoStep.weight );
                 } else {
                     // * - o - m - *a
                     //      \    ` *b
@@ -348,59 +436,296 @@ addPlotDevelopment( 10, function ( plot ) {
                     // ->
                     // * - m - o ----- *a
                     //      \    \
-                    //       ` o - * - *c
-                    //           `---- *b
+                    //       ` o -\--- *b
+                    //           ` m - *c
                     
-                    // TODO
+                    // NOTE: Since our branches are all associative,
+                    // this rule can be extrapolated to numbers of
+                    // branches other than two by transforming the
+                    // branches one at a time. In the following
+                    // examples, a doubled edge indicates a group of
+                    // nodes that are associative with each other,
+                    // which can be regarded as a single node with
+                    // more than two branches:
+                    //
+                    // * - o = o - m - *a
+                    //      \   \    ` *b
+                    //       \   `---- *c
+                    //        `------- *d
+                    // ->
+                    // * - o - m - o ----- *a
+                    //      \   \    \
+                    //       \   ` o -\--- *b
+                    //        \      ` m - *c
+                    //         `---------- *d
+                    // ->
+                    // * - m - o === o ----- *a
+                    //      \    \     \
+                    //       ` o =\= o -\--- *b
+                    //          \  \   ` m - *c
+                    //           `-- m ----- *d
+                    //
+                    // * - o - m = m - *a
+                    //      \   \    ` *b
+                    //       \   `---- *c
+                    //        `------- *d
+                    // ->
+                    // * - m - o - m - *a
+                    //      \    \   ` *b
+                    //       ` o -\--- *c
+                    //           ` m - *d
+                    // ->
+                    // * - m = m - o ------ *a
+                    //      \   \    \
+                    //       \   ` o -\---- *b
+                    //        \      ` m
+                    //         `-- o --\\-- *c
+                    //              `-- m - *d
+                    //
+                    // * - o = o - m = m - *a
+                    //      \   \   \    ` *b
+                    //       \   \   `---- *c
+                    //        \   `------- *d
+                    //         `---------- *e
+                    // ->
+                    // * - o - m = m - o ------ *a
+                    //      \   \   \    \
+                    //       \   \   ` o -\---- *b
+                    //        \   \      ` m
+                    //         \   `-- o --\\-- *c
+                    //          \       `-- m - *d
+                    //           `------------- *e
+                    // ->
+                    // * - m = m - o ===== o ------ *a
+                    //      \   \    \       \
+                    //       \   ` o =\=== o -\---- *b
+                    //        \      ` m     ` m
+                    //         `-- o ==\\= o --\\-- *c
+                    //              \   \\  `-- m - *d
+                    //               `-- m -------- *e
+                    //
+                    // The midway edges form a complete bipartite
+                    // graph. The bipartite pattern is clearer when
+                    // written as a diagram where edges may flow
+                    // either way:
+                    //
+                    // * ->- o ->- m ->- *
+                    //   ,-'        `->- *
+                    //   `->---------->- *
+                    // ->
+                    // * ->- m ->--- o ->- *
+                    //        `->-. /
+                    //             X
+                    //        ,-<-' \
+                    //    ,- m -<--- o ->- *
+                    //    `->----------->- *
+                    
+                    
+                    newPlotChanged = true;
+                    
+                    var numberOfMovingDupes = 0;
+                    newPlot.eachStep( function ( nextStep ) {
+                        if ( nextStep.start !== otherNode.name )
+                            return;
+                        numberOfMovingDupes++;
+                    } );
+                    var numberOfOtherDupes = 0;
+                    newPlot.eachStep( function ( nextStep ) {
+                        if ( nextStep.start !== movingNode.name )
+                            return;
+                        numberOfOtherDupes++;
+                    } );
+                    var numberOfMidwayEdges =
+                        numberOfMovingDupes * numberOfOtherDupes;
+                    var midwayWeight =
+                        intoStep.weight / numberOfMidwayEdges;
+                    
+                    newPlot = newPlot.
+                        minusNodeName( otherNode, movingNode ).
+                        minusStep( intoStep );
+                    
+                    var movingDupeSources = [];
+                    (function () {
+                        var movingDupe = movingNode;
+                        movingDupeSources.push( movingDupe );
+                        newPlot = newPlot.plusNode( movingDupe );
+                        newPlot.eachStep( function ( prevStep ) {
+                            if ( prevStep.stop !== otherNode.name )
+                                return;
+                            newPlot = newPlot.replaceStep( prevStep,
+                                prevStep.start, movingDupe.name );
+                        } );
+                    })();
+                    var movingDupeSinks = [];
+                    newPlot.eachStep( function ( nextStep ) {
+                        if ( nextStep.start !== otherNode.name )
+                            return;
+                        
+                        if ( movingNode.type === "startConcurrency" )
+                            var movingDupe =
+                                { type: "stopConcurrency",
+                                    name: gensym() };
+                        else if ( movingNode.type === "startChoice" )
+                            var movingDupe = { type: "stopChoice",
+                                name: gensym(),
+                                choice: movingNode.choice };
+                        else
+                            throw new Error();
+                        
+                        movingDupeSinks.push( movingDupe );
+                        newPlot = newPlot.plusNode( movingDupe ).
+                            replaceStep( nextStep,
+                                movingDupe.name, nextStep.stop );
+                    } );
+                    
+                    var otherDupes = [];
+                    newPlot.eachStep( function ( nextStep ) {
+                        if ( nextStep.start !== movingNode.name )
+                            return;
+                        if ( stepsEq( nextStep, step ) ) {
+                            var otherDupe = otherNode;
+                        } else {
+                            var otherDupe =
+                                duplicateNode( otherNode );
+                        }
+                        
+                        otherDupes.push( otherDupe );
+                        newPlot = newPlot.plusNode( otherDupe ).
+                            replaceStep( nextStep,
+                                otherDupe.name, nextStep.stop );
+                    } );
+                    
+                    _.arrEach( movingDupeSources,
+                        function ( movingDupe ) {
+                        
+                        _.arrEach( otherDupes,
+                            function ( otherDupe ) {
+                            
+                            newPlot = newPlot.plusSteps( midwayWeight,
+                                movingDupe.name, otherDupe.name );
+                        } );
+                    } );
+                    _.arrEach( movingDupeSinks,
+                        function ( movingDupe ) {
+                        
+                        _.arrEach( otherDupes,
+                            function ( otherDupe ) {
+                            
+                            newPlot = newPlot.plusSteps( midwayWeight,
+                                otherDupe.name, movingDupe.name );
+                        } );
+                    } );
                 }
             } else {
-                // If m and o are the same:
-                //
-                // * - o - m - *
-                // * '       ` *
-                // ->
-                // * ----- o - *
-                //       /
-                // * - m ----- *
-                // or
-                // * - m - o - *
-                //       X
-                // * - m - o - *
-                //
-                // NOTE: We may want to use the more complex one just
-                // to keep things symmetrical.
-                
-                // If o is stopChoice and m is startConcurrency:
-                //
-                // * - o - m - *
-                // * '       ` *
-                // ->
-                // * - m - o - *
-                //       X
-                // * - m - o - *
-                
-                // If o is stopConcurrency and m is startChoice:
-                //
-                // * - o - m - *
-                // * '       ` *
-                // ->
-                // * - m - o - *
-                //       X
-                // * - m - o - *
-                //
-                // ...except that this is the only case where we have
-                // a single decision being made concurrently with
-                // itself. This is kind of unprecedented in the rest
-                // of the system.
-                //
-                // We'll probably want to label choice nodes with
-                // boolean expressions over propositional variables,
-                // not necessarily because we logically need to, but
-                // because it might help in comprehending the
-                // generated story.
-                
-                // TODO: Decide which specific option to do in each
-                // case, and implement it.
+                if ( branchFamily( movingNode ) ===
+                        branchFamily( otherNode )
+                    && false ) {
+//                    && randomlyDecide( 2 / 3 ) ) {
+                    
+                    // * - o - m - *
+                    // * '       ` *
+                    // ->
+                    // * ----- o - *
+                    //       /
+                    // * - m ----- *
+                    // or
+                    // * - m ----- *
+                    //       \
+                    // * ----- o - *
+                    
+                    // TODO
+                } else {
+                    // * - o - m - *
+                    // * '       ` *
+                    // ->
+                    // * - m - o - *
+                    //       X
+                    // * - m - o - *
+                    
+                    // NOTE: If o is stopConcurrency and m is
+                    // startChoice, then this is the only case where
+                    // we have a single decision being made
+                    // concurrently with itself. This is kind of
+                    // unprecedented in the rest of the system. To
+                    // help in comprehending the story, we arbitrarily
+                    // decide that all but one of the startChoice
+                    // nodes have a choiceMadeHere property equal to
+                    // false.
+                    
+                    newPlotChanged = true;
+                    
+                    var startStepCandidates = [];
+                    newPlot.eachStep( function ( prevStep ) {
+                        if ( prevStep.stop !== otherNode.name )
+                            return;
+                        startStepCandidates.push( prevStep );
+                    } );
+                    var startStep =
+                        randomlyPickElement( startStepCandidates );
+                    var numberOfMovingDupes =
+                        startStepCandidates.length;
+                    var numberOfOtherDupes = 0;
+                    newPlot.eachStep( function ( nextStep ) {
+                        if ( nextStep.start !== movingNode.name )
+                            return;
+                        numberOfOtherDupes++;
+                    } );
+                    var numberOfMidwayEdges =
+                        numberOfMovingDupes * numberOfOtherDupes;
+                    var midwayWeight =
+                        intoStep.weight / numberOfMidwayEdges;
+                    
+                    newPlot = newPlot.
+                        minusNodeName( otherNode, movingNode ).
+                        minusStep( intoStep );
+                    
+                    var movingDupes = [];
+                    newPlot.eachStep( function ( prevStep ) {
+                        if ( prevStep.stop !== otherNode.name )
+                            return;
+                        
+                        if ( stepsEq( prevStep, startStep ) ) {
+                            var movingDupe = movingNode;
+                        } else {
+                            var movingDupe =
+                                duplicateNode( movingNode );
+                            if ( movingDupe.type === "startChoice"
+                                && otherNode.type ===
+                                    "stopConcurrency" )
+                                movingDupe.choiceMadeHere = false;
+                        }
+                        movingDupes.push( movingDupe );
+                        newPlot = newPlot.plusNode( movingDupe ).
+                            replaceStep( prevStep,
+                                prevStep.start, movingDupe.name );
+                    } );
+                    
+                    var otherDupes = [];
+                    newPlot.eachStep( function ( nextStep ) {
+                        if ( nextStep.start !== movingNode.name )
+                            return;
+                        
+                        if ( stepsEq( nextStep, step ) ) {
+                            var otherDupe = otherNode;
+                        } else {
+                            var otherDupe =
+                                duplicateNode( otherNode );
+                        }
+                        otherDupes.push( otherDupe );
+                        newPlot = newPlot.plusNode( otherDupe ).
+                            replaceStep( nextStep,
+                                otherDupe.name, nextStep.stop );
+                    } );
+                    
+                    _.arrEach( movingDupes, function ( movingDupe ) {
+                        _.arrEach( otherDupes,
+                            function ( otherDupe ) {
+                            
+                            newPlot = newPlot.plusSteps( midwayWeight,
+                                movingDupe.name, otherDupe.name );
+                        } );
+                    } );
+                }
             }
             
         } else if (
@@ -416,7 +741,7 @@ addPlotDevelopment( 10, function ( plot ) {
             throw new Error();
         }
     } );
-    return newPlot;
+    return newPlotChanged ? newPlot : null;
 } );
 
 // TODO:
@@ -680,17 +1005,30 @@ function randomlyPickPlot() {
     //           \       \
     //            `------- * - *
     
-    var stopChoice1 = { type: "stopChoice", name: gensym() };
+    var choiceName1 = gensym();
+    var choiceName3 = gensym();
+    
+    var stopChoice1 =
+        { type: "stopChoice", name: gensym(), choice: choiceName1 };
     var stopStory1 = { type: "stopStory", name: gensym() };
     
     var startStory = { type: "startStory", name: gensym() };
-    var startChoice1 = { type: "startChoice", name: gensym() };
-    var startChoice2 = { type: "startChoice", name: gensym() };
-    var startChoice3 = { type: "startChoice", name: gensym() };
-    var startChoice4 = { type: "startChoice", name: gensym() };
+    var startChoice1 =
+        { type: "startChoice", name: gensym(), choice: choiceName1,
+            choiceMadeHere: true };
+    var startChoice2 =
+        { type: "startChoice", name: gensym(), choice: choiceName3,
+            choiceMadeHere: true };
+    var startChoice3 =
+        { type: "startChoice", name: gensym(), choice: gensym(),
+            choiceMadeHere: true };
+    var startChoice4 =
+        { type: "startChoice", name: gensym(), choice: gensym(),
+            choiceMadeHere: true };
     var stopStory2 = { type: "stopStory", name: gensym() };
     
-    var stopChoice3 = { type: "stopChoice", name: gensym() };
+    var stopChoice3 =
+        { type: "stopChoice", name: gensym(), choice: choiceName3 };
     var stopStory3 = { type: "stopStory", name: gensym() };
     
     var w = 1 / 14;
