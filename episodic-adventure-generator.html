@@ -46,7 +46,8 @@ window.onload = function () {
         _.dom( _.el( "result-json" ),
             JSON.stringify( plot.toJson() ) );
         _.dom( _.el( "result-graphic" ),
-            Viz( dot, { format: "png-image-element" } ) );
+            _.arrCut( new DOMParser().parseFromString( Viz( dot ), "image/svg+xml" ).children ) );
+//            Viz( dot, { format: "png-image-element" } ) );
     }
     _.appendDom( _.el( "go" ), { click: function () {
         generate();
