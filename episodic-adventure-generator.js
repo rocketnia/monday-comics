@@ -59,6 +59,27 @@ function labelPlotNode( node ) {
     }
 }
 
+function plotNodeFamily( node ) {
+    if ( node.type === "startStory"
+        || node.type === "stopStory" )
+        return "choice";
+    else if ( node.type === "startConcurrency"
+        || node.type === "stopConcurrency" )
+        return "concurrency";
+    else if ( node.type === "startChoice"
+        || node.type === "stopChoice" )
+        return "choice";
+    else if ( node.type === "foreshadow"
+        || node.type === "lampshade" )
+        return "foreshadow";
+    else if ( node.type === "doNothing" )
+        return "doNothing";
+    else if ( node.type === "use" )
+        return "use";
+    else
+        throw new Error();
+}
+
 function Plot() {}
 Plot.prototype.init_ = function ( nodes, steps ) {
     this.nodes_ = nodes;
@@ -279,14 +300,17 @@ addPlotDevelopment( 2, function ( plot ) {
         plusSteps( w, stop.name, step.stop );
 } );
 addPlotDevelopment( 3, function ( plot ) {
-    // Add a fresh puzzle dependency to any step by foreshadowing it and lampshading it all at once.
+    // Add a fresh puzzle dependency to any step by foreshadowing it
+    // and lampshading it all at once.
     
     var step = plot.randomlyPickStep();
     if ( step === null )
         return null;
     var resource = gensym();
-    var foreshadow = { type: "foreshadow", name: gensym(), resource: resource, bookend: null };
-    var lampshade = { type: "lampshade", name: gensym(), resource: resource, bookend: null };
+    var foreshadow = { type: "foreshadow", name: gensym(),
+        resource: resource, bookend: null };
+    var lampshade = { type: "lampshade", name: gensym(),
+        resource: resource, bookend: null };
     return plot.plusNode( foreshadow, lampshade ).replaceStep( step,
         step.start, foreshadow.name, lampshade.name, step.stop );
 } );
@@ -300,670 +324,427 @@ addPlotDevelopment( 3, function ( plot ) {
     if ( foreshadowing.type !== "foreshadow" )
         return null;
     
-    var node = { type: "use", name: gensym(), resource: foreshadowing.resource };
+    var node = { type: "use", name: gensym(),
+        resource: foreshadowing.resource };
     return plot.plusNode( node ).
         replaceStep( step, step.start, node.name, step.stop );
 } );
-addPlotDevelopment( 10, function ( plot ) {
-    // Migrate all but one branch of a branching node earlier in time.
+function randomlyPickThreeSteps( plot ) {
+    var midwayStep = plot.randomlyPickStep();
+    if ( midwayStep === null )
+        return null;
+    var beforeNode = plot.getNode( midwayStep.start );
+    var afterNode = plot.getNode( midwayStep.stop );
+    var beforeStepCandidates = [];
+    var afterStepCandidates = [];
+    plot.eachStep( function ( step ) {
+        if ( step.stop === beforeNode.name )
+            beforeStepCandidates.push( step );
+        if ( step.start === afterNode.name )
+            afterStepCandidates.push( step );
+    } );
+    if ( beforeStepCandidates.length === 0 )
+        return null;
+    if ( afterStepCandidates.length === 0 )
+        return null;
+    var beforeStep = randomlyPickElement( beforeStepCandidates );
+    var afterStep = randomlyPickElement( afterStepCandidates );
     
-    var step = plot.randomlyPickStep();
-    if ( step === null )
+    var result = {};
+    result.beforeStepCandidates = beforeStepCandidates;
+    result.afterStepCandidates = afterStepCandidates;
+    result.midwayStep = midwayStep;
+    result.beforeStep = beforeStep;
+    result.afterStep = afterStep;
+    result.beforeNode = beforeNode;
+    result.afterNode = afterNode;
+    return result;
+}
+function specialCommutationIsAllowed( beforeNode, afterNode ) {
+    
+    // We explicitly avoid making changes that could cause a
+    // `choiceMadeHere` node to gain more or less coverage over the
+    // playthroughs. We do this just because a playthrough with more
+    // or fewer than one `choiceMadeHere` node would be confusing for
+    // the author.
+    //
+    // TODO: See if there's a way we can show the author which choices
+    // should lead to which branches. That would make these cases less
+    // confusing, and we might not need to disallow them anymore.
+    //
+    if (
+        (afterNode.type === "startChoice"
+            || afterNode.type === "startConcurrency")
+        && beforeNode.type === "startChoice"
+        && beforeNode.choiceMadeHere )
+        return false;
+    if (
+        (beforeNode.type === "startChoice"
+            || beforeNode.type === "startConcurrency")
+        && afterNode.type === "startChoice"
+        && afterNode.choiceMadeHere )
+        return false;
+    
+    // We avoid making changes that would allow a "startChoice" node
+    // to appear on a branch it wasn't originally on. (TODO: Actually,
+    // I'm confused about the reason we need the "stopConcurrency"
+    // cases, but they do seem to be needed.)
+    if ( (afterNode.type === "stopChoice"
+            || afterNode.type === "stopConcurrency")
+        && beforeNode.type === "stopChoice" )
+        return false;
+    if ( (beforeNode.type === "stopChoice"
+            || beforeNode.type === "stopConcurrency")
+        && afterNode.type === "stopChoice" )
+        return false;
+    
+    // We don't allow commutation across bookends.
+    if ( plotNodeFamily( beforeNode ) === "foreshadow"
+        && plotNodeFamily( afterNode ) === "foreshadow"
+        && ((beforeNode.bookend !== null
+                && beforeNode.bookend.val === afterNode.resource)
+            || (afterNode.bookend !== null
+                && afterNode.bookend.val === beforeNode.resource)) )
+        return false;
+    
+    // We don't allow commutation that would let something be
+    // foreshadowed more than once at a time.
+    //
+    // TODO: The design sketch would currently allow a lampshading
+    // followed by a foreshadowing of the same resource to rewrite
+    // into nothing. See if we can easily support that.
+    //
+    if ( ((beforeNode.type === "lampshade"
+                && afterNode.type === "foreshadow")
+            || (beforeNode.type === "foreshadow"
+                && afterNode.type === "lampshade"))
+        && beforeNode.resource === afterNode.resource )
+        return false;
+    
+    // We don't allow commutation that would let something be used
+    // outside its foreshadowing range.
+    if ( ((plotNodeFamily( beforeNode ) === "foreshadow"
+                && afterNode.type === "use")
+            || (plotNodeFamily( afterNode ) === "foreshadow"
+                && beforeNode.type === "use"))
+        && beforeNode.resource === afterNode.resource )
+        return false;
+    
+    return true;
+}
+addPlotDevelopment( 20, function ( plot ) {
+    // Pick an edge, and commute its two nodes in a way that
+    // duplicates them over each other's branches.
+    //
+    // TODO: In the original design sketch, this is described in terms
+    // of several informal rules for migrating nodes earlier or later
+    // in time. See if we should update the design sketch to align
+    // with this simpler implementation strategy.
+    
+    // * - b - a - *
+    // * '       ` *
+    // ->
+    // * - a - b - *
+    //       X
+    // * - a - b - *
+    
+    // * ->- b ->- a ->- *
+    //   ,-'        `->- *
+    //   `->---------->- *
+    // ->
+    // * ->- a ->--- b ->- *
+    //        `->-. /
+    //             X
+    //        ,-<-' \
+    //    ,- a -<--- b ->- *
+    //    `->----------->- *
+    
+    var threeSteps = randomlyPickThreeSteps( plot );
+    if ( threeSteps === null )
         return null;
-    var movingNode = plot.getNode( step.start );
-    if ( !(movingNode.type === "startConcurrency"
-        || movingNode.type === "startChoice") )
+    var beforeNode = threeSteps.beforeNode;
+    var afterNode = threeSteps.afterNode;
+    var numberOfBeforeNextSteps = 0;
+    var numberOfAfterPrevSteps = 0;
+    plot.eachStep( function ( step ) {
+        if ( step.start === beforeNode.name )
+            numberOfBeforeNextSteps++;
+        if ( step.stop === afterNode.name )
+            numberOfAfterPrevSteps++;
+    } );
+    if ( numberOfBeforeNextSteps !== 1
+        && numberOfAfterPrevSteps !== 1 )
         return null;
+    var numberOfMidwaySteps =
+        (threeSteps.beforeStepCandidates.length +
+            numberOfBeforeNextSteps - 1) *
+        (threeSteps.afterStepCandidates.length +
+            numberOfAfterPrevSteps - 1);
+    var midwayWeight =
+        threeSteps.midwayStep.weight / numberOfMidwaySteps;
+    
+    function duplicateNode( node ) {
+        if ( node.type === "startStory" )
+            return { type: "startStory", name: gensym() };
+        else if ( node.type === "stopStory" )
+            return { type: "stopStory", name: gensym() };
+        else if ( node.type === "startConcurrency" )
+            return { type: "startConcurrency", name: gensym() };
+        else if ( node.type === "stopConcurrency" )
+            return { type: "stopConcurrency", name: gensym() };
+        else if ( node.type === "startChoice" )
+            return { type: "startChoice", name: gensym(),
+                choice: node.choice,
+                choiceMadeHere: node.choiceMadeHere };
+        else if ( node.type === "stopChoice" )
+            return { type: "stopChoice", name: gensym(),
+                choice: node.choice };
+        else if ( node.type === "foreshadow" )
+            return { type: "foreshadow", name: gensym(),
+                resource: node.resource, bookend: node.bookend };
+        else if ( node.type === "lampshade" )
+            return { type: "lampshade", name: gensym(),
+                resource: node.resource, bookend: node.bookend };
+        else if ( node.type === "doNothing" )
+            return { type: "doNothing", name: gensym() };
+        else if ( node.type === "use" )
+            return { type: "use", name: gensym(),
+                resource: node.resource };
+        else
+            throw new Error();
+    }
+    function reverseNode( node ) {
+        // NOTE: This isn't as uncontroversial as it might look. In
+        // particular, a `stopChoice` contains less information than a
+        // `startChoice`, so this operation isn't perfectly involutive
+        // there.
+        
+        if ( node.type === "startStory" )
+            return { type: "stopStory", name: gensym() };
+        else if ( node.type === "stopStory" )
+            return { type: "startStory", name: gensym() };
+        else if ( node.type === "startConcurrency" )
+            return { type: "stopConcurrency", name: gensym() };
+        else if ( node.type === "stopConcurrency" )
+            return { type: "startConcurrency", name: gensym() };
+        else if ( node.type === "startChoice" )
+            return { type: "stopChoice", name: gensym(),
+                choice: node.choice };
+        else if ( node.type === "stopChoice" )
+            return { type: "startChoice", name: gensym(),
+                choice: node.choice, choiceMadeHere: false };
+        else if ( node.type === "foreshadow" )
+            return { type: "lampshade", name: gensym(),
+                resource: node.resource, bookend: node.bookend };
+        else if ( node.type === "lampshade" )
+            return { type: "foreshadow", name: gensym(),
+                resource: node.resource, bookend: node.bookend };
+        else if ( node.type === "doNothing" )
+            return { type: "doNothing", name: gensym() };
+        else if ( node.type === "use" )
+            return { type: "use", name: gensym(),
+                resource: node.resource };
+        else
+            throw new Error();
+    }
+    
+    function isOfTypePreparedForInThisRule( node ) {
+        return node.type === "startStory" ||
+            node.type === "stopStory" ||
+            node.type === "startConcurrency" ||
+            node.type === "stopConcurrency" ||
+            node.type === "startChoice" ||
+            node.type === "stopChoice" ||
+            node.type === "foreshadow" ||
+            node.type === "lampshade" ||
+            node.type === "doNothing" ||
+            node.type === "use";
+    }
+    if ( !isOfTypePreparedForInThisRule( beforeNode )
+        || !isOfTypePreparedForInThisRule( afterNode ) )
+        throw new Error();
+    
+    if ( plotNodeFamily( beforeNode ) === "story"
+        || plotNodeFamily( afterNode ) === "story" )
+        throw new Error();
+    
+    if ( !specialCommutationIsAllowed( beforeNode, afterNode ) )
+        return null;
+    
     var newPlot = plot;
-    var newPlotChanged = false;
-    newPlot.eachStep( function ( intoStep ) {
-        if ( intoStep.stop !== movingNode.name )
-            return;
-        var otherNode = plot.getNode( intoStep.start );
-        
-        function switchWhileRetainingOtherChildren( intoWeight ) {
-            newPlotChanged = true;
-            newPlot.eachStep( function ( prevStep ) {
-                if ( prevStep.stop !== otherNode.name )
-                    return;
-                newPlot = newPlot.replaceStep( prevStep,
-                    prevStep.start, movingNode.name );
-            } );
-            newPlot = newPlot.
-                replaceStep( step, otherNode.name, step.stop ).
-                minusStep( intoStep ).
-                plusSteps( intoWeight,
-                    movingNode.name, otherNode.name );
-        }
-        
-        function branchFamily( node ) {
-            if ( node.type === "startConcurrency"
-                || node.type === "stopConcurrency" )
-                return "concurrency";
-            else if ( node.type === "startChoice"
-                || node.type === "stopChoice" )
-                return "choice";
-            else
-                throw new Error();
-        }
-        
-        function duplicateNode( node ) {
-            if ( node.type === "startConcurrency" )
-                return { type: "startConcurrency", name: gensym() };
-            else if ( node.type === "startChoice" )
-                return { type: "startChoice", name: gensym(),
-                    choice: node.choice,
-                    choiceMadeHere: node.choiceMadeHere };
-            else if ( node.type === "stopConcurrency" )
-                return { type: "stopConcurrency", name: gensym() };
-            else if ( node.type === "stopChoice" )
-                return { type: "stopChoice", name: gensym(),
-                    choice: node.choice };
-            else
-                throw new Error();
-        }
-        
-        if ( otherNode.type === "doNothing"
-            || otherNode.type === "use" ) {
-            
-            // * - o - m - *
-            //           ` *
-            // ->
-            // * - m - o - *
-            //       `---- *
-            
-            switchWhileRetainingOtherChildren( intoStep.weight );
-        } else if (
-            otherNode.type === "startConcurrency"
-            || otherNode.type === "stopConcurrency"
-            || otherNode.type === "startChoice"
-            || otherNode.type === "stopChoice" ) {
-            
-            // TODO: Fully unify the two branches of this `if`.
-            //
-            // TODO: Remove the branchFamily(...)===branchFamily(...)
-            // branches, and instead add another rule to transform
-            // like so, when the branch families are equal:
-            // * ----- m - *
-            //       /
-            // * - o ----- *
-            // ->
-            // * - *
-            // * - *
-            // ...Er, actually, that would removing the last
-            // `choiceMadeHere` startChoice. Maybe that's a bad idea.
-            //
-            if ( otherNode.type === "startConcurrency"
-                || otherNode.type === "startChoice" ) {
-                
-                // We explicitly avoid making changes that could cause
-                // a `choiceMadeHere` node to gain more or less
-                // coverage over the playthroughs. We do this just
-                // because a playthrough with more or fewer than one
-                // `choiceMadeHere` node would be confusing for the
-                // author.
-                //
-                // TODO: See if there's a way we can show the author
-                // which choices should lead to which branches. That
-                // would make these cases less confusing, and we might
-                // not need to disallow them anymore.
-                //
-                if ( movingNode.type === "startChoice"
-                    && movingNode.choiceMadeHere )
-                    return;
-                if ( otherNode.type === "startChoice"
-                    && otherNode.choiceMadeHere )
-                    return;
-                
-                if ( branchFamily( movingNode ) ===
-                        branchFamily( otherNode )
-                    && randomlyDecide( 2 / 3 ) ) {
-                    
-                    // * - o - m - *a
-                    //      \    ` *b
-                    //       `---- *c
-                    // ->
-                    // * - m - o - *a
-                    //      \    ` *c
-                    //       `---- *b
-                    
-                    switchWhileRetainingOtherChildren(
-                        intoStep.weight );
-                } else {
-                    // * - o - m - *a
-                    //      \    ` *b
-                    //       `---- *c
-                    // ->
-                    // * - m - o ----- *a
-                    //      \    \
-                    //       ` o -\--- *b
-                    //           ` m - *c
-                    
-                    // NOTE: Since our branches are all associative,
-                    // this rule can be extrapolated to numbers of
-                    // branches other than two by transforming the
-                    // branches one at a time. In the following
-                    // examples, a doubled edge indicates a group of
-                    // nodes that are associative with each other,
-                    // which can be regarded as a single node with
-                    // more than two branches:
-                    //
-                    // * - o = o - m - *a
-                    //      \   \    ` *b
-                    //       \   `---- *c
-                    //        `------- *d
-                    // ->
-                    // * - o - m - o ----- *a
-                    //      \   \    \
-                    //       \   ` o -\--- *b
-                    //        \      ` m - *c
-                    //         `---------- *d
-                    // ->
-                    // * - m - o === o ----- *a
-                    //      \    \     \
-                    //       ` o =\= o -\--- *b
-                    //          \  \   ` m - *c
-                    //           `-- m ----- *d
-                    //
-                    // * - o - m = m - *a
-                    //      \   \    ` *b
-                    //       \   `---- *c
-                    //        `------- *d
-                    // ->
-                    // * - m - o - m - *a
-                    //      \    \   ` *b
-                    //       ` o -\--- *c
-                    //           ` m - *d
-                    // ->
-                    // * - m = m - o ------ *a
-                    //      \   \    \
-                    //       \   ` o -\---- *b
-                    //        \      ` m
-                    //         `-- o --\\-- *c
-                    //              `-- m - *d
-                    //
-                    // * - o = o - m = m - *a
-                    //      \   \   \    ` *b
-                    //       \   \   `---- *c
-                    //        \   `------- *d
-                    //         `---------- *e
-                    // ->
-                    // * - o - m = m - o ------ *a
-                    //      \   \   \    \
-                    //       \   \   ` o -\---- *b
-                    //        \   \      ` m
-                    //         \   `-- o --\\-- *c
-                    //          \       `-- m - *d
-                    //           `------------- *e
-                    // ->
-                    // * - m = m - o ===== o ------ *a
-                    //      \   \    \       \
-                    //       \   ` o =\=== o -\---- *b
-                    //        \      ` m     ` m
-                    //         `-- o ==\\= o --\\-- *c
-                    //              \   \\  `-- m - *d
-                    //               `-- m -------- *e
-                    //
-                    // The midway edges form a complete bipartite
-                    // graph. The bipartite pattern is clearer when
-                    // written as a diagram where edges may flow
-                    // either way:
-                    //
-                    // * ->- o ->- m ->- *
-                    //   ,-'        `->- *
-                    //   `->---------->- *
-                    // ->
-                    // * ->- m ->--- o ->- *
-                    //        `->-. /
-                    //             X
-                    //        ,-<-' \
-                    //    ,- m -<--- o ->- *
-                    //    `->----------->- *
-                    
-                    
-                    newPlotChanged = true;
-                    
-                    var numberOfMovingDupes = 0;
-                    newPlot.eachStep( function ( nextStep ) {
-                        if ( nextStep.start !== otherNode.name )
-                            return;
-                        numberOfMovingDupes++;
-                    } );
-                    var numberOfOtherDupes = 0;
-                    newPlot.eachStep( function ( nextStep ) {
-                        if ( nextStep.start !== movingNode.name )
-                            return;
-                        numberOfOtherDupes++;
-                    } );
-                    var numberOfMidwayEdges =
-                        numberOfMovingDupes * numberOfOtherDupes;
-                    var midwayWeight =
-                        intoStep.weight / numberOfMidwayEdges;
-                    
-                    newPlot = newPlot.
-                        minusNodeName( otherNode, movingNode ).
-                        minusStep( intoStep );
-                    
-                    var movingDupeSources = [];
-                    (function () {
-                        var movingDupe = movingNode;
-                        movingDupeSources.push( movingDupe );
-                        newPlot = newPlot.plusNode( movingDupe );
-                        newPlot.eachStep( function ( prevStep ) {
-                            if ( prevStep.stop !== otherNode.name )
-                                return;
-                            newPlot = newPlot.replaceStep( prevStep,
-                                prevStep.start, movingDupe.name );
-                        } );
-                    })();
-                    var movingDupeSinks = [];
-                    newPlot.eachStep( function ( nextStep ) {
-                        if ( nextStep.start !== otherNode.name )
-                            return;
-                        
-                        if ( movingNode.type === "startConcurrency" )
-                            var movingDupe =
-                                { type: "stopConcurrency",
-                                    name: gensym() };
-                        else if ( movingNode.type === "startChoice" )
-                            var movingDupe = { type: "stopChoice",
-                                name: gensym(),
-                                choice: movingNode.choice };
-                        else
-                            throw new Error();
-                        
-                        movingDupeSinks.push( movingDupe );
-                        newPlot = newPlot.plusNode( movingDupe ).
-                            replaceStep( nextStep,
-                                movingDupe.name, nextStep.stop );
-                    } );
-                    
-                    var otherDupes = [];
-                    newPlot.eachStep( function ( nextStep ) {
-                        if ( nextStep.start !== movingNode.name )
-                            return;
-                        if ( stepsEq( nextStep, step ) ) {
-                            var otherDupe = otherNode;
-                        } else {
-                            var otherDupe =
-                                duplicateNode( otherNode );
-                        }
-                        
-                        otherDupes.push( otherDupe );
-                        newPlot = newPlot.plusNode( otherDupe ).
-                            replaceStep( nextStep,
-                                otherDupe.name, nextStep.stop );
-                    } );
-                    
-                    _.arrEach( movingDupeSources,
-                        function ( movingDupe ) {
-                        
-                        _.arrEach( otherDupes,
-                            function ( otherDupe ) {
-                            
-                            newPlot = newPlot.plusSteps( midwayWeight,
-                                movingDupe.name, otherDupe.name );
-                        } );
-                    } );
-                    _.arrEach( movingDupeSinks,
-                        function ( movingDupe ) {
-                        
-                        _.arrEach( otherDupes,
-                            function ( otherDupe ) {
-                            
-                            newPlot = newPlot.plusSteps( midwayWeight,
-                                otherDupe.name, movingDupe.name );
-                        } );
-                    } );
-                }
+    
+    newPlot = newPlot.
+        minusNodeName( beforeNode.name, afterNode.name ).
+        minusStep( threeSteps.midwayStep );
+    
+    var afterDupeSources = [];
+    var afterDupeSinks = [];
+    var beforeDupeSinks = [];
+    var beforeDupeSources = [];
+    newPlot.eachStep( function ( step ) {
+        if ( step.stop === beforeNode.name ) {
+            if ( stepsEq( step, threeSteps.beforeStep ) ) {
+                var afterDupe = afterNode;
             } else {
-                if ( branchFamily( movingNode ) ===
-                        branchFamily( otherNode )
-                    && false ) {
-//                    && randomlyDecide( 2 / 3 ) ) {
-                    
-                    // * - o - m - *
-                    // * '       ` *
-                    // ->
-                    // * ----- o - *
-                    //       /
-                    // * - m ----- *
-                    // or
-                    // * - m ----- *
-                    //       \
-                    // * ----- o - *
-                    
-                    // TODO
-                } else {
-                    // * - o - m - *
-                    // * '       ` *
-                    // ->
-                    // * - m - o - *
-                    //       X
-                    // * - m - o - *
-                    
-                    // NOTE: If o is stopConcurrency and m is
-                    // startChoice, then this is the only case where
-                    // we have a single decision being made
-                    // concurrently with itself. This is kind of
-                    // unprecedented in the rest of the system. To
-                    // help in comprehending the story, we arbitrarily
-                    // decide that all but one of the startChoice
-                    // nodes have a choiceMadeHere property equal to
-                    // false.
-                    
-                    newPlotChanged = true;
-                    
-                    var startStepCandidates = [];
-                    newPlot.eachStep( function ( prevStep ) {
-                        if ( prevStep.stop !== otherNode.name )
-                            return;
-                        startStepCandidates.push( prevStep );
-                    } );
-                    var startStep =
-                        randomlyPickElement( startStepCandidates );
-                    var numberOfMovingDupes =
-                        startStepCandidates.length;
-                    var numberOfOtherDupes = 0;
-                    newPlot.eachStep( function ( nextStep ) {
-                        if ( nextStep.start !== movingNode.name )
-                            return;
-                        numberOfOtherDupes++;
-                    } );
-                    var numberOfMidwayEdges =
-                        numberOfMovingDupes * numberOfOtherDupes;
-                    var midwayWeight =
-                        intoStep.weight / numberOfMidwayEdges;
-                    
-                    newPlot = newPlot.
-                        minusNodeName( otherNode, movingNode ).
-                        minusStep( intoStep );
-                    
-                    var movingDupes = [];
-                    newPlot.eachStep( function ( prevStep ) {
-                        if ( prevStep.stop !== otherNode.name )
-                            return;
-                        
-                        if ( stepsEq( prevStep, startStep ) ) {
-                            var movingDupe = movingNode;
-                        } else {
-                            var movingDupe =
-                                duplicateNode( movingNode );
-                            if ( movingDupe.type === "startChoice"
-                                && otherNode.type ===
-                                    "stopConcurrency" )
-                                movingDupe.choiceMadeHere = false;
-                        }
-                        movingDupes.push( movingDupe );
-                        newPlot = newPlot.plusNode( movingDupe ).
-                            replaceStep( prevStep,
-                                prevStep.start, movingDupe.name );
-                    } );
-                    
-                    var otherDupes = [];
-                    newPlot.eachStep( function ( nextStep ) {
-                        if ( nextStep.start !== movingNode.name )
-                            return;
-                        
-                        if ( stepsEq( nextStep, step ) ) {
-                            var otherDupe = otherNode;
-                        } else {
-                            var otherDupe =
-                                duplicateNode( otherNode );
-                        }
-                        otherDupes.push( otherDupe );
-                        newPlot = newPlot.plusNode( otherDupe ).
-                            replaceStep( nextStep,
-                                otherDupe.name, nextStep.stop );
-                    } );
-                    
-                    _.arrEach( movingDupes, function ( movingDupe ) {
-                        _.arrEach( otherDupes,
-                            function ( otherDupe ) {
-                            
-                            newPlot = newPlot.plusSteps( midwayWeight,
-                                movingDupe.name, otherDupe.name );
-                        } );
-                    } );
-                }
+                var afterDupe = duplicateNode( afterNode );
+                if ( afterDupe.type === "startChoice"
+                    && beforeNode.type === "stopConcurrency" )
+                    afterDupe.choiceMadeHere = false;
             }
-            
-        } else if (
-            otherNode.type === "foreshadow"
-            || otherNode.type === "lampshade"
-            || otherNode.type === "startStory" ) {
-            
-            // Do nothing.
-            
-        } else if ( otherNode.type === "stopStory" ) {
-            throw new Error();
-        } else {
-            throw new Error();
+            afterDupeSources.push( afterDupe );
+            newPlot = newPlot.plusNode( afterDupe ).
+                replaceStep( step, step.start, afterDupe.name );
+        } else if ( step.start === beforeNode.name ) {
+            var afterDupe = reverseNode( afterNode );
+            afterDupeSinks.push( afterDupe );
+            newPlot = newPlot.plusNode( afterDupe ).
+                replaceStep( step, afterDupe.name, step.stop );
+        } else if ( step.start === afterNode.name ) {
+            if ( stepsEq( step, threeSteps.afterStep ) )
+                var beforeDupe = beforeNode;
+            else
+                var beforeDupe = duplicateNode( beforeNode );
+            beforeDupeSinks.push( beforeDupe );
+            newPlot = newPlot.plusNode( beforeDupe ).
+                replaceStep( step, beforeDupe.name, step.stop );
+        } else if ( step.stop === afterNode.name ) {
+            var beforeDupe = reverseNode( beforeNode );
+            beforeDupeSources.push( beforeDupe );
+            newPlot = newPlot.plusNode( beforeDupe ).
+                replaceStep( step, step.start, beforeDupe.name );
         }
     } );
-    return newPlotChanged ? newPlot : null;
+    
+    _.arrEach( beforeDupeSources, function ( beforeDupe ) {
+        _.arrEach( afterDupeSinks, function ( afterDupe ) {
+            // NOTE: This shouldn't happen. It would have fallen under
+            // the condition (numberOfBeforeNextSteps !== 1 &&
+            // numberOfAfterPrevSteps !== 1) checked above.
+            throw new Error();
+        } );
+    } );
+    _.arrEach( beforeDupeSources, function ( beforeDupe ) {
+        _.arrEach( afterDupeSources, function ( afterDupe ) {
+            newPlot = newPlot.plusSteps( midwayWeight,
+                beforeDupe.name, afterDupe.name );
+        } );
+    } );
+    _.arrEach( beforeDupeSinks, function ( beforeDupe ) {
+        _.arrEach( afterDupeSources, function ( afterDupe ) {
+            // NOTE: This is the categorical dual of itself. When we
+            // swap "before" and "after", swap "sinks" and "sources",
+            // and swap the order of arguments to `plusSteps`, we get
+            // just what we started with (except with the `arrEach`
+            // calls in a different order).
+            newPlot = newPlot.plusSteps( midwayWeight,
+                afterDupe.name, beforeDupe.name );
+        } );
+    } );
+    _.arrEach( beforeDupeSinks, function ( beforeDupe ) {
+        _.arrEach( afterDupeSinks, function ( afterDupe ) {
+            newPlot = newPlot.plusSteps( midwayWeight,
+                beforeDupe.name, afterDupe.name );
+        } );
+    } );
+    
+    return newPlot;
 } );
-
-// TODO:
-/*
-* Migrate all but one branch of a rejoining node later in time.
-*/
-
-addPlotDevelopment( 10, function ( plot ) {
-    // Migrate a foreshadowing earlier in time, as long as it doesn't go earlier than its bookend (if any). If it crosses a branching node, add a corresponding lampshading on the other branch. If it encounters a lampshading of the same resource, merge the region by removing both the lampshading and the foreshadowing.
+addPlotDevelopment( 20, function ( plot ) {
+    // Pick an edge, and commute its two nodes in a way that preserves
+    // all but one of each node's connections.
+    //
+    // TODO: In the original design sketch, this is described in terms
+    // of several informal rules for migrating nodes earlier or later
+    // in time. See if we should update the design sketch to align
+    // with this simpler implementation strategy.
     
-    var step = plot.randomlyPickStep();
-    if ( step === null )
-        return null;
-    var foreshadowing = plot.getNode( step.stop );
-    if ( foreshadowing.type !== "foreshadow" )
-        return null;
-    var otherNode = plot.getNode( step.start );
+    // * - b - a - *
+    // * '       ` *
+    // ->
+    // * - a - b - *
+    // * ---\-'
+    //       `---- *
     
-    if ( (otherNode.type === "foreshadow"
-            || otherNode.type === "lampshade")
-        && ((otherNode.bookend !== null
-                && otherNode.bookend.val === foreshadowing.resource)
-            || (foreshadowing.bookend !== null
-                && foreshadowing.bookend.val === otherNode.resource)) )
+    // * - b - a - *
+    //       \   ` *
+    //        `--- *
+    // ->
+    // * - a - b - *
+    //       `--\- *
+    //           ` *
+    
+    // TODO: Figure out if we can easily support this case without
+    // potentially creating a directed cycle.
+    //
+    // * - b - a - *
+    //      `-/--- *
+    // * ----'
+    // ->
+    // * - a - b - *
+    // * '       ` *
+    
+    var threeSteps = randomlyPickThreeSteps( plot );
+    if ( threeSteps === null )
+        return null;
+    var beforeNode = threeSteps.beforeNode;
+    var afterNode = threeSteps.afterNode;
+    var numberOfBeforeNextSteps = 0;
+    var numberOfAfterPrevSteps = 0;
+    plot.eachStep( function ( step ) {
+        if ( step.start === beforeNode.name )
+            numberOfBeforeNextSteps++;
+        if ( step.stop === afterNode.name )
+            numberOfAfterPrevSteps++;
+    } );
+    if ( numberOfBeforeNextSteps !== 1
+        && numberOfAfterPrevSteps !== 1 )
         return null;
     
-    if ( otherNode.type === "lampshade"
-        && otherNode.resource === foreshadowing.resource ) {
-        
-        var newPlot = plot.minusStep( step );
-        var spanCount = 0;
-        var spanWeight = step.weight;
-        newPlot.eachStep( function ( prevStep ) {
-            if ( prevStep.stop !== step.start )
-                return;
-            newPlot.eachStep( function ( nextStep ) {
-                if ( nextStep.start !== step.stop )
-                    return;
-                spanCount++;
-            } );
-        } );
-        newPlot.eachStep( function ( otherStep ) {
-            if ( !(otherStep.stop === step.start
-                || otherStep.start === step.stop) )
-                return;
-            spanWeight += otherStep.weight;
-            newPlot = newPlot.minusStep( step );
-        } );
-        newPlot.eachStep( function ( prevStep ) {
-            if ( prevStep.stop !== step.start )
-                return;
-            newPlot.eachStep( function ( nextStep ) {
-                if ( nextStep.start !== step.stop )
-                    return;
-                newPlot = newPlot.plusSteps( spanWeight / stepCount,
-                    prevStep.start, nextStep.stop );
-            } );
-        } );
-        newPlot.eachStep( function ( otherStep ) {
-            if ( !(otherStep.stop === step.start
-                || otherStep.start === step.stop) )
-                return;
-            newPlot = newPlot.minusStep( step );
-        } );
-        return newPlot.minusNodeName( step.start, step.stop );
+    function isOfTypePreparedForInThisRule( node ) {
+        return node.type === "startStory" ||
+            node.type === "stopStory" ||
+            node.type === "startConcurrency" ||
+            node.type === "stopConcurrency" ||
+            node.type === "startChoice" ||
+            node.type === "stopChoice" ||
+            node.type === "foreshadow" ||
+            node.type === "lampshade" ||
+            node.type === "doNothing" ||
+            node.type === "use";
     }
-    
-    if ( otherNode.type === "doNothing"
-        || otherNode.type === "foreshadow"
-        || otherNode.type === "lampshade"
-        || otherNode.type === "use"
-        || otherNode.type === "startConcurrency"
-        || otherNode.type === "stopConcurrency"
-        || otherNode.type === "startChoice"
-        || otherNode.type === "stopChoice" ) {
-        
-        var newPlot = plot.minusNodeName( foreshadowing.name ).
-            minusStep( step );
-        newPlot.eachStep( function ( nextStep ) {
-            if ( nextStep.start !== otherNode.name )
-                return;
-            if ( stepsEq( step, nextStep ) )
-                return;
-            var lampshading = { type: "lampshade", name: gensym(), resource: foreshadowing.resource, bookend: null };
-            newPlot = newPlot.plusNode( lampshading ).
-                replaceStep( nextStep,
-                    nextStep.start,
-                    lampshading.name,
-                    nextStep.stop );
-        } );
-        newPlot.eachStep( function ( nextStep ) {
-            if ( nextStep.start !== foreshadowing.name )
-                return;
-            newPlot = newPlot.replaceStep( nextStep,
-                otherNode.name, nextStep.stop );
-        } );
-        newPlot.eachStep( function ( prevStep ) {
-            if ( prevStep.stop !== otherNode.name )
-                return;
-            var newForeshadowing = { type: "foreshadow", name: gensym(), resource: foreshadowing.resource, bookend: foreshadowing.bookend };
-            newPlot = newPlot.plusNode( newForeshadowing ).
-                replaceStep( prevStep,
-                    prevStep.start,
-                    newForeshadowing.name,
-                    prevStep.stop );
-        } );
-        return newPlot;
-    } else if ( otherNode.type === "startStory" ) {
-        return null;
-    } else if ( otherNode.type === "stopStory" ) {
+    if ( !isOfTypePreparedForInThisRule( beforeNode )
+        || !isOfTypePreparedForInThisRule( afterNode ) )
         throw new Error();
-    } else {
+    
+    var beforeFamily = plotNodeFamily( beforeNode );
+    var afterFamily = plotNodeFamily( afterNode );
+    
+    if ( beforeFamily === "story" || afterFamily === "story" )
         throw new Error();
-    }
-} );
-addPlotDevelopment( 10, function ( plot ) {
-    // Migrate a lampshading later in time, as long as it doesn't go later than its bookend (if any). If it crosses a rejoining node, add a corresponding foreshadowing on the other branch. If it encounters a foreshadowing of the same resource, merge the region by removing both the lampshading and the foreshadowing.
     
-    var step = plot.randomlyPickStep();
-    if ( step === null )
-        return null;
-    var lampshading = plot.getNode( step.start );
-    if ( lampshading.type !== "lampshade" )
-        return null;
-    var otherNode = plot.getNode( step.stop );
-    
-    if ( (otherNode.type === "lampshade"
-            || otherNode.type === "foreshadow")
-        && ((otherNode.bookend !== null
-                && otherNode.bookend.val === lampshading.resource)
-            || (lampshading.bookend !== null
-                && lampshading.bookend.val === otherNode.resource)) )
+    if ( (beforeFamily === "concurrency"
+            && afterFamily === "choice")
+        || (beforeFamily === "choice"
+            && afterFamily === "concurrency")
+        || (beforeFamily === "concurrency"
+            && afterFamily === "foreshadow")
+        || (beforeFamily === "foreshadow"
+            && afterFamily === "concurrency")
+        || (beforeFamily === "choice" && afterFamily === "foreshadow")
+        || (beforeFamily === "foreshadow" && afterFamily === "choice")
+        )
         return null;
     
-    if ( otherNode.type === "foreshadow"
-        && otherNode.resource === lampshading.resource ) {
-        
-        var newPlot = plot.minusStep( step );
-        var spanCount = 0;
-        var spanWeight = step.weight;
-        newPlot.eachStep( function ( prevStep ) {
-            if ( prevStep.stop !== step.start )
-                return;
-            newPlot.eachStep( function ( nextStep ) {
-                if ( nextStep.start !== step.stop )
-                    return;
-                spanCount++;
-            } );
-        } );
-        newPlot.eachStep( function ( otherStep ) {
-            if ( !(otherStep.stop === step.start
-                || otherStep.start === step.stop) )
-                return;
-            spanWeight += otherStep.weight;
-            newPlot = newPlot.minusStep( step );
-        } );
-        newPlot.eachStep( function ( prevStep ) {
-            if ( prevStep.stop !== step.start )
-                return;
-            newPlot.eachStep( function ( nextStep ) {
-                if ( nextStep.start !== step.stop )
-                    return;
-                newPlot = newPlot.plusSteps( spanWeight / stepCount,
-                    prevStep.start, nextStep.stop );
-            } );
-        } );
-        newPlot.eachStep( function ( otherStep ) {
-            if ( !(otherStep.stop === step.start
-                || otherStep.start === step.stop) )
-                return;
-            newPlot = newPlot.minusStep( step );
-        } );
-        return newPlot.minusNodeName( step.start, step.stop );
-    }
-    
-    if ( otherNode.type === "doNothing"
-        || otherNode.type === "lampshade"
-        || otherNode.type === "foreshadow"
-        || otherNode.type === "use"
-        || otherNode.type === "startConcurrency"
-        || otherNode.type === "stopConcurrency"
-        || otherNode.type === "startChoice"
-        || otherNode.type === "stopChoice" ) {
-        
-        var newPlot =
-            plot.minusNodeName( lampshading.name ).minusStep( step );
-        newPlot.eachStep( function ( prevStep ) {
-            if ( prevStep.stop !== otherNode.name )
-                return;
-            if ( stepsEq( step, prevStep ) )
-                return;
-            var foreshadowing = { type: "foreshadow", name: gensym(), resource: lampshading.resource, bookend: null };
-            newPlot = newPlot.plusNode( foreshadowing ).
-                replaceStep( prevStep,
-                    prevStep.start,
-                    foreshadowing.name,
-                    prevStep.stop );
-        } );
-        newPlot.eachStep( function ( prevStep ) {
-            if ( prevStep.stop !== lampshading.name )
-                return;
-            newPlot = newPlot.replaceStep( prevStep,
-                prevStep.start, otherNode.name );
-        } );
-        newPlot.eachStep( function ( nextStep ) {
-            if ( nextStep.start !== otherNode.name )
-                return;
-            var newLampshading = { type: "lampshade", name: gensym(), resource: lampshading.resource, bookend: lampshading.bookend };
-            newPlot = newPlot.plusNode( newLampshading ).
-                replaceStep( nextStep,
-                    nextStep.start,
-                    newLampshading.name,
-                    nextStep.stop );
-        } );
-        return newPlot;
-    } else if ( otherNode.type === "stopStory" ) {
+    if ( !specialCommutationIsAllowed( beforeNode, afterNode ) )
         return null;
-    } else if ( otherNode.type === "startStory" ) {
-        throw new Error();
-    } else {
-        throw new Error();
-    }
+    
+    return plot.
+        replaceStep( threeSteps.midwayStep,
+            afterNode.name, beforeNode.name ).
+        replaceStep( threeSteps.beforeStep,
+            threeSteps.beforeStep.start, afterNode.name ).
+        replaceStep( threeSteps.afterStep,
+            beforeNode.name, threeSteps.afterStep.stop );
 } );
 
 
@@ -988,8 +769,12 @@ addPlotDevelopment( 3, function ( plot ) {
         return null;
     
     return plot.minusNodeName( step.start, step.stop ).
-        plusNode( { type: "lampshade", name: step.start, resource: lampshading.resource, bookend: { val: foreshadowing.resource } } ).
-        plusNode( { type: "foreshadow", name: step.stop, resource: foreshadowing.resource, bookend: { val: lampshading.resource } } );
+        plusNode( { type: "lampshade", name: step.start,
+            resource: lampshading.resource,
+            bookend: { val: foreshadowing.resource } } ).
+        plusNode( { type: "foreshadow", name: step.stop,
+            resource: foreshadowing.resource,
+            bookend: { val: lampshading.resource } } );
 } );
 
 // TODO:
@@ -997,6 +782,8 @@ addPlotDevelopment( 3, function ( plot ) {
 When a sufficient number of character uses have been assigned on every branch, the generation is complete.
 */
 
+// TODO: Decide whether to leave this debug state in here.
+var debug_plotsSeen = [];
 function randomlyPickPlot() {
     
     //        ,------- * ----- *
@@ -1060,6 +847,8 @@ function randomlyPickPlot() {
     
     // TODO: Use the termination condition described in the TODO
     // above. At least don't hardcode 50 iterations here.
+    debug_plotsSeen = [];
+    debug_plotsSeen.push( plot );
     _.repeat( 30, function () {
         do {
             var plotDevelopment =
@@ -1067,6 +856,7 @@ function randomlyPickPlot() {
             var newPlot = plotDevelopment( plot );
         } while ( newPlot === null );
         plot = newPlot;
+        debug_plotsSeen.push( plot );
     } );
     
     
