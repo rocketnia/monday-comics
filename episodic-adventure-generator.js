@@ -455,7 +455,7 @@ function specialCommutationIsAllowed( beforeNode, afterNode ) {
     else
         return randomlyDecide( 0.4 );
 }
-addPlotDevelopment( 20, function ( plot ) {
+addPlotDevelopment( 30, function ( plot ) {
     // Pick an edge, and commute its two nodes in a way that
     // duplicates them over each other's branches.
     
@@ -667,7 +667,7 @@ addPlotDevelopment( 20, function ( plot ) {
     
     return newPlot;
 } );
-addPlotDevelopment( 20, function ( plot ) {
+addPlotDevelopment( 30, function ( plot ) {
     // Pick an edge, and commute its two nodes in a way that preserves
     // all but one of each node's other connections.
     
