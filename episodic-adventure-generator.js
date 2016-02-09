@@ -249,6 +249,16 @@ Plot.prototype.toJson = function () {
         } )
     };
 };
+function plotFromJson( json ) {
+    var plot = makePlot();
+    _.arrEach( json.nodes, function ( node ) {
+        plot = plot.plusNode( node );
+    } );
+    _.arrEach( json.steps, function ( step ) {
+        plot = plot.plusStep( step );
+    } );
+    return plot;
+}
 
 var plotDevelopments = [];
 function addPlotDevelopment( weight, plotDevelopment ) {
@@ -784,7 +794,7 @@ When a sufficient number of character uses have been assigned on every branch, t
 
 // TODO: Decide whether to leave this debug state in here.
 var debug_plotsSeen = [];
-function randomlyPickPlot() {
+function randomlyPickPlot( options ) {
     
     //        ,------- * ----- *
     //       /       /
@@ -846,10 +856,10 @@ function randomlyPickPlot() {
     
     
     // TODO: Use the termination condition described in the TODO
-    // above. At least don't hardcode 50 iterations here.
+    // above.
     debug_plotsSeen = [];
     debug_plotsSeen.push( plot );
-    _.repeat( 30, function () {
+    _.repeat( options.numberOfIterations, function () {
         do {
             var plotDevelopment =
                 randomlyPickWeighted( plotDevelopments );
