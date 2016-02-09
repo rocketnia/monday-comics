@@ -309,7 +309,7 @@ addPlotDevelopment( 2, function ( plot ) {
         plusSteps( w * 2, start.name, stop.name ).
         plusSteps( w, stop.name, step.stop );
 } );
-addPlotDevelopment( 3, function ( plot ) {
+addPlotDevelopment( 2, function ( plot ) {
     // Add a fresh puzzle dependency to any step by foreshadowing it
     // and lampshading it all at once.
     
@@ -408,9 +408,12 @@ function specialCommutationIsAllowed( beforeNode, afterNode ) {
         && afterNode.type === "stopChoice" )
         return false;
     
+    var beforeFamily = plotNodeFamily( beforeNode );
+    var afterFamily = plotNodeFamily( afterNode );
+    
     // We don't allow commutation across bookends.
-    if ( plotNodeFamily( beforeNode ) === "foreshadow"
-        && plotNodeFamily( afterNode ) === "foreshadow"
+    if ( beforeFamily === "foreshadow"
+        && afterFamily === "foreshadow"
         && ((beforeNode.bookend !== null
                 && beforeNode.bookend.val === afterNode.resource)
             || (afterNode.bookend !== null
@@ -420,9 +423,8 @@ function specialCommutationIsAllowed( beforeNode, afterNode ) {
     // We don't allow commutation that would let something be
     // foreshadowed more than once at a time.
     //
-    // TODO: The design sketch would currently allow a lampshading
-    // followed by a foreshadowing of the same resource to rewrite
-    // into nothing. See if we can easily support that.
+    // TODO: See if there's a safe way to can elimitate a lampshading
+    // followed by a foreshadowing of the same resource.
     //
     if ( ((beforeNode.type === "lampshade"
                 && afterNode.type === "foreshadow")
@@ -433,23 +435,29 @@ function specialCommutationIsAllowed( beforeNode, afterNode ) {
     
     // We don't allow commutation that would let something be used
     // outside its foreshadowing range.
-    if ( ((plotNodeFamily( beforeNode ) === "foreshadow"
+    if ( ((beforeFamily === "foreshadow"
                 && afterNode.type === "use")
-            || (plotNodeFamily( afterNode ) === "foreshadow"
+            || (afterFamily === "foreshadow"
                 && beforeNode.type === "use"))
         && beforeNode.resource === afterNode.resource )
         return false;
     
-    return true;
+    if ( afterNode.type === "foreshadow" )
+        return randomlyDecide( 1 );
+    else if ( beforeNode.type === "lampshade" )
+        return randomlyDecide( 1 );
+    else if ( afterNode.type === "startConcurrency"
+        || afterNode.type === "startChoice" )
+        return randomlyDecide( 0.8 );
+    else if ( beforeNode.type === "stopConcurrency"
+        || beforeNode.type === "stopChoice" )
+        return randomlyDecide( 0.8 );
+    else
+        return randomlyDecide( 0.4 );
 }
 addPlotDevelopment( 20, function ( plot ) {
     // Pick an edge, and commute its two nodes in a way that
     // duplicates them over each other's branches.
-    //
-    // TODO: In the original design sketch, this is described in terms
-    // of several informal rules for migrating nodes earlier or later
-    // in time. See if we should update the design sketch to align
-    // with this simpler implementation strategy.
     
     // * - b - a - *
     // * '       ` *
@@ -661,12 +669,7 @@ addPlotDevelopment( 20, function ( plot ) {
 } );
 addPlotDevelopment( 20, function ( plot ) {
     // Pick an edge, and commute its two nodes in a way that preserves
-    // all but one of each node's connections.
-    //
-    // TODO: In the original design sketch, this is described in terms
-    // of several informal rules for migrating nodes earlier or later
-    // in time. See if we should update the design sketch to align
-    // with this simpler implementation strategy.
+    // all but one of each node's other connections.
     
     // * - b - a - *
     // * '       ` *
@@ -757,8 +760,7 @@ addPlotDevelopment( 20, function ( plot ) {
             beforeNode.name, threeSteps.afterStep.stop );
 } );
 
-
-// TODO:
+// TODO: Add rules for these:
 /*
 * Upgrade a puzzle dependency to connote access to one of the points of interest (not already picked this way).
 * Upgrade a puzzle dependency to connote access to one of the characters' uses. (If the same character is picked multiple times, each one represents a different thing the character can do.)
@@ -787,7 +789,7 @@ addPlotDevelopment( 3, function ( plot ) {
             bookend: { val: lampshading.resource } } );
 } );
 
-// TODO:
+// TODO: Implement this termination condition:
 /*
 When a sufficient number of character uses have been assigned on every branch, the generation is complete.
 */
