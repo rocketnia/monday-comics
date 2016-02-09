@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+episodic-adventure-generator.html
+Copyright 2016 Ross Angle. Released under the MIT License.
+-->
+<title>Monday Comics episodic adventure generator</title>
+<style type="text/css">
+#result-dot,
+#result-json {
+    width: 400px;
+    height: 300px;
+}
+</style>
+</head>
+<body>
+
+<p>Each time this page is loaded, a new story skeleton is made. The
+  two text boxes and the image below are visualizations of this story
+  skeleton.</p>
+
+<p><label>Number of iterations
+    <input type="text" id="number-of-iterations" value="50"
+        /></label></p>
+<p><button id="generate-all">Generate JSON, DOT, and image from
+    scratch</button></p>
+<p><button id="generate-from-json">Generate DOT and image from current
+    JSON</button></p>
+<p><button id="generate-from-dot">Generate image from current
+    DOT</button></p>
+
+<p><textarea id="result-json"></textarea
+    ><textarea id="result-dot"></textarea></p>
+
+<p id="result-graphic"></p>
+
+<script type="text/javascript" src="lib/viz.js"></script>
+<script type="text/javascript" src="lib/lathe.js"></script>
+<script type="text/javascript">"use strict";
+var _ = rocketnia.lathe;
+</script>
+<script type="text/javascript" src="monday-comics.js"></script>
+<script type="text/javascript" src="episodic-adventure-generator.js">
+    </script>
+<script type="text/javascript">"use strict";
+
+window.onload = function () {
+    function generateFromDot() {
+        var dot = _.el( "result-dot" ).value;
+        _.dom( _.el( "result-graphic" ),
+            _.arrCut(
+                new DOMParser().parseFromString(
+                    Viz( dot ), "image/svg+xml" ).children ) );
+//            Viz( dot, { format: "png-image-element" } ) );
+    }
+    function generateFromJson() {
+        var rawJson = _.el( "result-json" ).value;
+        
+        try { var parsedJson = JSON.parse( rawJson ); }
+        catch ( e ) { alert( "Error parsing JSON: " + e ); }
+        
+        var plot = plotFromJson( parsedJson );
+        var dot = "" + plot.toDotGraphNotation();
+        _.dom( _.el( "result-dot" ), dot );
+        generateFromDot();
+    }
+    function generateAll() {
+        var plot = randomlyPickPlot( {
+            numberOfIterations: +_.el( "number-of-iterations" ).value
+        } );
+        var dot = "" + plot.toDotGraphNotation();
+        _.dom( _.el( "result-json" ),
+            JSON.stringify( plot.toJson() ) );
+        _.dom( _.el( "result-dot" ), dot );
+        generateFromDot();
+    }
+    _.appendDom( _.el( "generate-all" ), { click: function () {
+        generateAll();
+    } } );
+    _.appendDom( _.el( "generate-from-json" ), { click: function () {
+        generateFromJson();
+    } } );
+    _.appendDom( _.el( "generate-from-dot" ), { click: function () {
+        generateFromDot();
+    } } );
+    generateAll();
+};
+
+</script>
+</body>
+</html>
