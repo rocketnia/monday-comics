@@ -163,7 +163,7 @@ characters.push( { name: "Magical Radia", qualities: [
     "using political magic"
 ] } );
 
-characters.push( { name: "Don Thump", qualities: [
+characters.push( { name: "Top Bun", qualities: [
     "being a rabbit",
     "savoring breakfast cereal",
     "overseeing kid-unapproved activities",
